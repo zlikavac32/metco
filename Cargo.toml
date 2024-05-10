@@ -1,0 +1,27 @@
+[package]
+name = "metco"
+version = "0.1.0"
+edition = "2021"
+homepage = "https://github.com/zlikavac32/metco"
+repository = "https://github.com/zlikavac32/metco"
+license = "MIT"
+description = "Metrics Collector inspired by StatsD."
+
+[dependencies]
+nom = "7.1.3"
+chrono = "0.4.38"
+figment = { version = "0.10", features = ["toml", "env"] }
+serde = { version = "1.0.201", features = ["derive"] }
+humantime-serde = "1.1.1"
+log = "0.4.21"
+stderrlog = "0.6.0"
+clap = { version = "4.5.4", features = ["derive"] }
+postgres = { version = "0.19.8", features = ["with-chrono-0_4"] }
+postgres-types = { version = "0.2.7", features = ["derive"] }
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+opt-level = 3
+

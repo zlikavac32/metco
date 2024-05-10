@@ -1,0 +1,18 @@
+host = "127.0.0.1"
+port = 3232
+
+refresh-interval = '60 s'
+
+[backend]
+enabled = ['console', 'postgresql']
+
+[backend.available.console]
+type = "console"
+
+[backend.available.postgresql]
+type = "postgresql"
+host = "127.0.0.1"
+port = 5432
+user = "pgsql"
+password = ""
+db-name = "metco"
