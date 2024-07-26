@@ -12,7 +12,7 @@ Additional/removed features compared to StatsD are:
 
 ## Disclaimer
 
-I'm still learning Rust, and although I run this in production for two of my clients without any issue, I can not advise you to do the same until you've checked my source code. I believe it's quite stable, buy me being a professional I can not guarantee that this could not cause some issue for you.
+I'm still learning Rust, and although I run this in production for two of my clients without any issue, I can not advise you to do the same until you've checked my source code. I believe it's quite stable, but me being a professional I can not guarantee that this could not cause some issue for you.
 
 That being said, I'm looking forward to more experienced Rust developers suggesting improvements and helping me to get better in Rust.
 
