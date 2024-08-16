@@ -5,7 +5,6 @@ Metrics Collector inspired by StatsD.
 Additional/removed features compared to StatsD are:
 
 - support for additional time units like `seconds`, `microseconds` and `nanoseconds`,
-- gauge removal,
 - setting gauge to negative value without first setting it to zero,
 - sets are not supported and
 - no sampling interval.
