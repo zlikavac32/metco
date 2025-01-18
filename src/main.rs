@@ -127,6 +127,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut now = Instant::now();
 
     fn flush(registry: Registry, config: Arc<Config>) -> Registry {
+        if registry.is_empty() {
+            log::info!("Registry is empty, nothing to aggregate");
+
+            return registry;
+        }
+
         let new_registry = registry.new_with_gauges();
 
         thread::spawn(move || {
