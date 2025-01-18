@@ -136,6 +136,12 @@ pub struct Registry {
 }
 
 impl Registry {
+    pub fn is_empty(&self) -> bool {
+        self.counters.is_empty() && self.gauges.is_empty() && self.timings.is_empty()
+    }
+}
+
+impl Registry {
     pub fn add(&mut self, metric: &Metric) -> bool {
         match &metric.kind {
             MetricKind::Counter(value) => self
