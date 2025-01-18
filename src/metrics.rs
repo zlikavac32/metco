@@ -87,7 +87,7 @@ impl Statistics {
 
     pub fn percentile(&self, p: f64) -> u64 {
         self.list
-            [((self.list.len() as f64 * p.max(0.).min(1.)).floor() as usize).min(self.list.len())]
+            [((self.list.len() as f64 * p.clamp(0., 1.)).floor() as usize).min(self.list.len())]
     }
 }
 
@@ -96,12 +96,18 @@ pub struct TimeFrame {
     pub counters: HashMap<String, Statistics>,
     pub gauges: HashMap<String, i64>,
     pub timings: HashMap<String, Statistics>,
+    pub host: String,
 }
 
 impl TryFrom<Registry> for TimeFrame {
     type Error = ();
 
     fn try_from(value: Registry) -> Result<Self, Self::Error> {
+        let host = hostname::get()
+            .map_err(|_| ())?
+            .into_string()
+            .map_err(|_| ())?;
+
         Ok(TimeFrame {
             gauges: value.gauges,
             counters: value.counters.into_iter().fold(
@@ -124,6 +130,7 @@ impl TryFrom<Registry> for TimeFrame {
 
                     map
                 }),
+            host,
         })
     }
 }

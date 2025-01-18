@@ -140,7 +140,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .backends
                 .enabled
                 .iter()
-                .map(|(name, backend)| -> Result<(String, Box<dyn backend::Backend>), Box<dyn Error>> {
+                .flat_map(|(name, backend)| -> Result<(String, Box<dyn backend::Backend>), Box<dyn Error>> {
                     Ok(
                         (
                             name.clone(),
@@ -162,15 +162,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         config.password(password);
                                         config.dbname(db_name);
 
-                                        config.connect(postgres::NoTls)?
+                                        match config.connect(postgres::NoTls) {
+                                            Ok(connection) => connection,
+                                            Err(err) => {
+                                                log::error!("Postgresql connection failed: {err}");
+
+                                                return Err(err.into());
+                                            }
+                                        }
                                     })
                                 ),
                             },
                         )
                     )
                 })
-                .filter(Result::is_ok)
-                .map(Result::unwrap)
                 .collect::<Vec<_>>();
 
             log::info!("Aggregating collected metrics");
