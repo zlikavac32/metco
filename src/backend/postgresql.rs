@@ -12,8 +12,9 @@ create table metrics
     name  text        not null,
     kind  metric_kind not null,
     time  timestamptz not null,
+    host  text        not null,
     value float8,
-    primary key (name, kind, time)
+    primary key (name, kind, time, host)
 );
  */
 
@@ -43,69 +44,88 @@ impl PostgreSQL {
         Self { client }
     }
 
-    fn insert(&mut self, time: &DateTime<Utc>, metric_kind: MetricKind, name: &str, value: f64) {
+    fn insert(
+        &mut self,
+        time: &DateTime<Utc>,
+        host: &str,
+        metric_kind: MetricKind,
+        name: &str,
+        value: f64,
+    ) {
         let sql = r"
-insert into metrics (name, kind, time, value)
-values ($1, $2, $3, $4)
-on conflict (name, kind, time)
+insert into metrics (name, kind, time, host, value)
+values ($1, $2, $3, $4, $5)
+on conflict (name, kind, time, host)
     do nothing
 ";
 
         if let Err(err) = self
             .client
-            .execute(sql, &[&name, &metric_kind, time, &value])
+            .execute(sql, &[&name, &metric_kind, time, &host, &value])
         {
-            log::error!("{err}");
+            log::error!("Postgresql failed to insert record: {err}");
         }
     }
 }
 
 impl Backend for PostgreSQL {
     fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame) {
-        time_frame
-            .gauges
-            .iter()
-            .for_each(|(name, value)| self.insert(time, MetricKind::Gauge, name, *value as f64));
+        time_frame.gauges.iter().for_each(|(name, value)| {
+            self.insert(
+                time,
+                &time_frame.host,
+                MetricKind::Gauge,
+                name,
+                *value as f64,
+            )
+        });
 
         time_frame.counters.iter().for_each(|(name, stats)| {
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Counter,
                 &format!("{name}.count"),
                 stats.count() as f64,
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Counter,
                 &format!("{name}.sum"),
                 stats.sum() as f64,
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Counter,
                 &format!("{name}.avg"),
                 stats.average(),
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Counter,
                 &format!("{name}.std"),
                 stats.std(),
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Counter,
                 &format!("{name}.median"),
                 stats.median(),
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Counter,
                 &format!("{name}.p75"),
                 stats.percentile(0.75) as f64,
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Counter,
                 &format!("{name}.p90"),
                 stats.percentile(0.90) as f64,
@@ -115,42 +135,49 @@ impl Backend for PostgreSQL {
         time_frame.timings.iter().for_each(|(name, stats)| {
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Timing,
                 &format!("{name}.count"),
                 stats.count() as f64,
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Timing,
                 &format!("{name}.sum"),
                 stats.sum() as f64,
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Timing,
                 &format!("{name}.avg"),
                 stats.average(),
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Timing,
                 &format!("{name}.std"),
                 stats.std(),
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Timing,
                 &format!("{name}.median"),
                 stats.median(),
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Timing,
                 &format!("{name}.p75"),
                 stats.percentile(0.75) as f64,
             );
             self.insert(
                 time,
+                &time_frame.host,
                 MetricKind::Timing,
                 &format!("{name}.p90"),
                 stats.percentile(0.90) as f64,

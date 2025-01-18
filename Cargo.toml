@@ -18,6 +18,7 @@ stderrlog = "0.6.0"
 clap = { version = "4.5.4", features = ["derive"] }
 postgres = { version = "0.19.8", features = ["with-chrono-0_4"] }
 postgres-types = { version = "0.2.7", features = ["derive"] }
+hostname = "0.4.0"
 
 [profile.release]
 lto = true

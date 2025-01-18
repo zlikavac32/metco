@@ -7,7 +7,7 @@ pub struct Console {}
 
 impl Backend for Console {
     fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame) {
-        println!("{}", time.to_rfc3339());
+        println!("{} - host: {}", time.to_rfc3339(), time_frame.host);
 
         if !time_frame.gauges.is_empty() {
             println!("Gauges:");
