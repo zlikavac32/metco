@@ -135,14 +135,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let new_registry = registry.new_with_gauges();
 
+        type CreatedBackend = (String, Box<dyn backend::Backend>);
+        type CreateBackendError = (String, Box<dyn Error>);
+
         thread::spawn(move || {
             let backends = config
                 .backends
                 .enabled
                 .iter()
-                .flat_map(|(name, backend)| -> Result<(String, Box<dyn backend::Backend>), Box<dyn Error>> {
-                    Ok(
-                        (
+                .map(
+                    |(name, backend)| -> Result<CreatedBackend, CreateBackendError> {
+                        Ok((
                             name.clone(),
                             match backend {
                                 Backend::Console => Box::<Console>::default(),
@@ -152,29 +155,33 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     user,
                                     password,
                                     db_name,
-                                } => Box::new(
-                                    PostgreSQL::new({
-                                        let mut config = postgres::Config::new();
+                                } => Box::new(PostgreSQL::new({
+                                    let mut config = postgres::Config::new();
 
-                                        config.host(host);
-                                        config.port(*port);
-                                        config.user(user);
-                                        config.password(password);
-                                        config.dbname(db_name);
+                                    config.host(host);
+                                    config.port(*port);
+                                    config.user(user);
+                                    config.password(password);
+                                    config.dbname(db_name);
 
-                                        match config.connect(postgres::NoTls) {
-                                            Ok(connection) => connection,
-                                            Err(err) => {
-                                                log::error!("Postgresql connection failed: {err}");
-
-                                                return Err(err.into());
-                                            }
+                                    match config.connect(postgres::NoTls) {
+                                        Ok(connection) => connection,
+                                        Err(err) => {
+                                            return Err((name.clone(), err.into()));
                                         }
-                                    })
-                                ),
+                                    }
+                                })),
                             },
-                        )
-                    )
+                        ))
+                    },
+                )
+                .filter_map(|backend_result| match backend_result {
+                    Ok(backend) => Some(backend),
+                    Err((backend, err)) => {
+                        log::error!("[{}] {}", backend, err);
+
+                        None
+                    }
                 })
                 .collect::<Vec<_>>();
 
