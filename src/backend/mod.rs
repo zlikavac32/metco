@@ -1,4 +1,5 @@
 mod console;
+mod elastic;
 mod postgresql;
 
 use crate::metrics::TimeFrame;
@@ -31,4 +32,5 @@ impl Logger {
 }
 
 pub use console::Console;
+pub use elastic::ElasticSearch;
 pub use postgresql::PostgreSQL;
