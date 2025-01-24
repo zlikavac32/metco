@@ -24,6 +24,10 @@ impl Logger {
     pub fn info(&self, msg: &str) {
         log::info!("[{}] {}", self.backend, msg);
     }
+
+    pub fn error(&self, msg: &str) {
+        log::error!("[{}] {}", self.backend, msg);
+    }
 }
 
 pub use console::Console;

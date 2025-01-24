@@ -51,6 +51,7 @@ impl PostgreSQL {
         metric_kind: MetricKind,
         name: &str,
         value: f64,
+        logger: &Logger,
     ) {
         let sql = r"
 insert into metrics (name, kind, time, host, value)
@@ -63,7 +64,7 @@ on conflict (name, kind, time, host)
             .client
             .execute(sql, &[&name, &metric_kind, time, &host, &value])
         {
-            log::error!("Postgresql failed to insert record: {err}");
+            logger.error(&format!("Postgresql failed to insert record: {err}"));
         }
     }
 }
@@ -77,6 +78,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Gauge,
                 name,
                 *value as f64,
+                &logger,
             );
 
             logger.debug(&format!("Inserted gauge {name}"));
@@ -89,6 +91,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Counter,
                 &format!("{name}.count"),
                 stats.count() as f64,
+                &logger,
             );
             self.insert(
                 time,
@@ -96,6 +99,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Counter,
                 &format!("{name}.sum"),
                 stats.sum() as f64,
+                &logger,
             );
             self.insert(
                 time,
@@ -103,6 +107,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Counter,
                 &format!("{name}.avg"),
                 stats.average(),
+                &logger,
             );
             self.insert(
                 time,
@@ -110,6 +115,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Counter,
                 &format!("{name}.std"),
                 stats.std(),
+                &logger,
             );
             self.insert(
                 time,
@@ -117,6 +123,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Counter,
                 &format!("{name}.median"),
                 stats.median(),
+                &logger,
             );
             self.insert(
                 time,
@@ -124,6 +131,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Counter,
                 &format!("{name}.p75"),
                 stats.percentile(0.75) as f64,
+                &logger,
             );
             self.insert(
                 time,
@@ -131,6 +139,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Counter,
                 &format!("{name}.p90"),
                 stats.percentile(0.90) as f64,
+                &logger,
             );
 
             logger.debug(&format!("Inserted counter {name}"));
@@ -143,6 +152,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Timing,
                 &format!("{name}.count"),
                 stats.count() as f64,
+                &logger,
             );
             self.insert(
                 time,
@@ -150,6 +160,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Timing,
                 &format!("{name}.sum"),
                 stats.sum() as f64,
+                &logger,
             );
             self.insert(
                 time,
@@ -157,6 +168,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Timing,
                 &format!("{name}.avg"),
                 stats.average(),
+                &logger,
             );
             self.insert(
                 time,
@@ -164,6 +176,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Timing,
                 &format!("{name}.std"),
                 stats.std(),
+                &logger,
             );
             self.insert(
                 time,
@@ -171,6 +184,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Timing,
                 &format!("{name}.median"),
                 stats.median(),
+                &logger,
             );
             self.insert(
                 time,
@@ -178,6 +192,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Timing,
                 &format!("{name}.p75"),
                 stats.percentile(0.75) as f64,
+                &logger,
             );
             self.insert(
                 time,
@@ -185,6 +200,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Timing,
                 &format!("{name}.p90"),
                 stats.percentile(0.90) as f64,
+                &logger,
             );
 
             logger.debug(&format!("Inserted timing {name}"));
