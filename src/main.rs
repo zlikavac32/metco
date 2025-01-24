@@ -185,7 +185,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             if let Some(time_frame) = registry.finalize() {
                 for mut backend in backends {
                     log::trace!("Notifying backend {:?}", backend.0);
-                    backend.1.publish(&now, &time_frame);
+                    backend
+                        .1
+                        .publish(&now, &time_frame, backend::Logger::new(backend.0));
                 }
             }
         });

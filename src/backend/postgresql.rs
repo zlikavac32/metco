@@ -1,4 +1,4 @@
-use crate::backend::Backend;
+use crate::backend::{Backend, Logger};
 use crate::metrics::TimeFrame;
 use chrono::{DateTime, Utc};
 use postgres::types::ToSql;
@@ -69,7 +69,7 @@ on conflict (name, kind, time, host)
 }
 
 impl Backend for PostgreSQL {
-    fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame) {
+    fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame, logger: Logger) {
         time_frame.gauges.iter().for_each(|(name, value)| {
             self.insert(
                 time,
@@ -77,7 +77,9 @@ impl Backend for PostgreSQL {
                 MetricKind::Gauge,
                 name,
                 *value as f64,
-            )
+            );
+
+            logger.debug(&format!("Inserted gauge {name}"));
         });
 
         time_frame.counters.iter().for_each(|(name, stats)| {
@@ -130,6 +132,8 @@ impl Backend for PostgreSQL {
                 &format!("{name}.p90"),
                 stats.percentile(0.90) as f64,
             );
+
+            logger.debug(&format!("Inserted counter {name}"));
         });
 
         time_frame.timings.iter().for_each(|(name, stats)| {
@@ -182,6 +186,8 @@ impl Backend for PostgreSQL {
                 &format!("{name}.p90"),
                 stats.percentile(0.90) as f64,
             );
+
+            logger.debug(&format!("Inserted timing {name}"));
         });
     }
 }
