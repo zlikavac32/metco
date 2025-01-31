@@ -240,6 +240,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                         registry = flush(registry, config.clone());
                         now = Instant::now();
+
+                        registry.add(&metric);
                     }
                 }
             }
