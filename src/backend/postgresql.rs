@@ -81,7 +81,7 @@ impl Backend for PostgreSQL {
                 &logger,
             );
 
-            logger.debug(&format!("Inserted gauge {name}"));
+            logger.debug(&format!("Processed gauge {name}"));
         });
 
         time_frame.counters.iter().for_each(|(name, stats)| {
@@ -142,7 +142,7 @@ impl Backend for PostgreSQL {
                 &logger,
             );
 
-            logger.debug(&format!("Inserted counter {name}"));
+            logger.debug(&format!("Processed counter {name}"));
         });
 
         time_frame.timings.iter().for_each(|(name, stats)| {
@@ -203,7 +203,7 @@ impl Backend for PostgreSQL {
                 &logger,
             );
 
-            logger.debug(&format!("Inserted timing {name}"));
+            logger.debug(&format!("Processed timing {name}"));
         });
     }
 }
