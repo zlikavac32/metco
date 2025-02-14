@@ -15,7 +15,6 @@ use figment::Figment;
 use serde::Deserialize;
 use stderrlog::Timestamp;
 
-use crate::backend::{Console, PostgreSQL};
 use crate::metrics::Registry;
 
 mod backend;
@@ -35,6 +34,14 @@ enum Backend {
         password: String,
         #[serde(rename = "db-name")]
         db_name: String,
+    },
+    #[serde(rename = "elasticsearch")]
+    ElasticSearch {
+        dsn: String,
+        #[serde(rename = "index-format")]
+        index_format: String,
+        #[serde(rename = "accept-invalid-certs")]
+        accept_invalid_certs: bool,
     },
 }
 
@@ -148,14 +155,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                         Ok((
                             name.clone(),
                             match backend {
-                                Backend::Console => Box::<Console>::default(),
+                                Backend::Console => Box::<backend::Console>::default(),
                                 Backend::PostgreSQL {
                                     host,
                                     port,
                                     user,
                                     password,
                                     db_name,
-                                } => Box::new(PostgreSQL::new({
+                                } => Box::new(backend::PostgreSQL::new({
                                     let mut config = postgres::Config::new();
 
                                     config.host(host);
@@ -166,11 +173,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                                     match config.connect(postgres::NoTls) {
                                         Ok(connection) => connection,
-                                        Err(err) => {
-                                            return Err((name.clone(), err.into()));
-                                        }
+                                        Err(err) => return Err((name.clone(), err.into())),
                                     }
                                 })),
+                                Backend::ElasticSearch {
+                                    dsn,
+                                    index_format,
+                                    accept_invalid_certs,
+                                } => {
+                                    let mut builder = reqwest::blocking::Client::builder();
+
+                                    if *accept_invalid_certs {
+                                        builder = builder.danger_accept_invalid_certs(true);
+                                    }
+
+                                    Box::new(backend::ElasticSearch::new(
+                                        match builder.build() {
+                                            Ok(client) => client,
+                                            Err(err) => return Err((name.clone(), err.into())),
+                                        },
+                                        dsn.clone(),
+                                        index_format.clone(),
+                                    ))
+                                }
                             },
                         ))
                     },

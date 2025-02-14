@@ -4,7 +4,7 @@ port = 3232
 refresh-interval = '60 s'
 
 [backend]
-enabled = ['console', 'postgresql']
+enabled = ['console', 'postgresql', 'elasticsearch']
 
 [backend.available.console]
 type = "console"
@@ -16,3 +16,10 @@ port = 5432
 user = "pgsql"
 password = ""
 db-name = "metco"
+
+[backend.available.elasticsearch]
+type = "elasticsearch"
+dsn = "http://user:pass@127.0.0.1:9200"
+# available options are: {date} which is in format %Y-%m-%d
+index-format = "metco-{date}"
+accept-invalid-certs = false
