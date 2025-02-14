@@ -64,7 +64,7 @@ on conflict (name, kind, time, host)
             .client
             .execute(sql, &[&name, &metric_kind, time, &host, &value])
         {
-            logger.error(&format!("Postgresql failed to insert record: {err}"));
+            logger.error(&format!("Insert record failed: {err}"));
         }
     }
 }
