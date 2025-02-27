@@ -40,7 +40,7 @@ impl ElasticSearch {
             .replace("{date}", &time.format("%Y-%m-%d").to_string());
 
         map.insert("host".into(), host.into());
-        map.insert("time".into(), time.to_rfc3339().into());
+        map.insert("timestamp".into(), time.to_rfc3339().into());
 
         let err = match self
             .client
