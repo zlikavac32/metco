@@ -29,7 +29,6 @@ impl Backend for Console {
                 logger.info(&format!("  {name}"));
                 logger.info(&format!("    count: {}", stats.count()));
                 logger.info(&format!("    sum: {}", stats.sum()));
-                logger.info(&format!("    avg: {}", stats.average()));
                 logger.info(&format!("    std: {}", stats.std()));
                 logger.info(&format!("    median: {}", stats.median()));
                 logger.info(&format!("    p75: {}", stats.percentile(0.75)));
@@ -44,7 +43,6 @@ impl Backend for Console {
                 logger.info(&format!("  {name}"));
                 logger.info(&format!("    count: {}", stats.count()));
                 logger.info(&format!("    sum: {}", stats.sum()));
-                logger.info(&format!("    avg: {}", stats.average()));
                 logger.info(&format!("    std: {}", stats.std()));
                 logger.info(&format!("    median: {}", stats.median()));
                 logger.info(&format!("    p75: {}", stats.percentile(0.75)));
