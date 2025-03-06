@@ -105,14 +105,6 @@ impl Backend for PostgreSQL {
                 time,
                 &time_frame.host,
                 MetricKind::Counter,
-                &format!("{name}.avg"),
-                stats.average(),
-                &logger,
-            );
-            self.insert(
-                time,
-                &time_frame.host,
-                MetricKind::Counter,
                 &format!("{name}.std"),
                 stats.std(),
                 &logger,
@@ -160,14 +152,6 @@ impl Backend for PostgreSQL {
                 MetricKind::Timing,
                 &format!("{name}.sum"),
                 stats.sum() as f64,
-                &logger,
-            );
-            self.insert(
-                time,
-                &time_frame.host,
-                MetricKind::Timing,
-                &format!("{name}.avg"),
-                stats.average(),
                 &logger,
             );
             self.insert(

@@ -67,10 +67,6 @@ impl Statistics {
         self.list.len()
     }
 
-    pub fn average(&self) -> f64 {
-        self.sum as f64 / self.list.len() as f64
-    }
-
     pub fn median(&self) -> f64 {
         let len = self.list.len();
 
