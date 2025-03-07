@@ -67,6 +67,14 @@ impl Statistics {
         self.list.len()
     }
 
+    pub fn min(&self) -> Option<u64> {
+        self.list.first().copied()
+    }
+
+    pub fn max(&self) -> Option<u64> {
+        self.list.last().copied()
+    }
+
     pub fn median(&self) -> f64 {
         let len = self.list.len();
 
