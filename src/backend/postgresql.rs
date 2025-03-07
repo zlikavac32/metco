@@ -134,6 +134,28 @@ impl Backend for PostgreSQL {
                 &logger,
             );
 
+            if let Some(min) = stats.min() {
+                self.insert(
+                    time,
+                    &time_frame.host,
+                    MetricKind::Counter,
+                    &format!("{name}.min"),
+                    min as f64,
+                    &logger,
+                );
+            }
+
+            if let Some(max) = stats.max() {
+                self.insert(
+                    time,
+                    &time_frame.host,
+                    MetricKind::Counter,
+                    &format!("{name}.max"),
+                    max as f64,
+                    &logger,
+                );
+            }
+
             logger.debug(&format!("Processed counter {name}"));
         });
 
@@ -186,6 +208,28 @@ impl Backend for PostgreSQL {
                 stats.percentile(0.90) as f64,
                 &logger,
             );
+
+            if let Some(min) = stats.min() {
+                self.insert(
+                    time,
+                    &time_frame.host,
+                    MetricKind::Timing,
+                    &format!("{name}.min"),
+                    min as f64,
+                    &logger,
+                );
+            }
+
+            if let Some(max) = stats.max() {
+                self.insert(
+                    time,
+                    &time_frame.host,
+                    MetricKind::Timing,
+                    &format!("{name}.max"),
+                    max as f64,
+                    &logger,
+                );
+            }
 
             logger.debug(&format!("Processed timing {name}"));
         });

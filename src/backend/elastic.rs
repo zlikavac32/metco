@@ -73,37 +73,47 @@ impl Backend for ElasticSearch {
         });
 
         time_frame.counters.iter().for_each(|(name, stats)| {
-            self.insert(
-                time,
-                &time_frame.host,
-                HashMap::from([
-                    (format!("counter.{name}.count"), stats.count().into()),
-                    (format!("counter.{name}.sum"), stats.sum().into()),
-                    (format!("counter.{name}.std"), stats.std().into()),
-                    (format!("counter.{name}.median"), stats.median().into()),
-                    (format!("counter.{name}.p75"), stats.percentile(0.75).into()),
-                    (format!("counter.{name}.p90"), stats.percentile(0.90).into()),
-                ]),
-                &logger,
-            );
+            let mut map = HashMap::from([
+                (format!("counter.{name}.count"), stats.count().into()),
+                (format!("counter.{name}.sum"), stats.sum().into()),
+                (format!("counter.{name}.std"), stats.std().into()),
+                (format!("counter.{name}.median"), stats.median().into()),
+                (format!("counter.{name}.p75"), stats.percentile(0.75).into()),
+                (format!("counter.{name}.p90"), stats.percentile(0.90).into()),
+            ]);
+
+            if let Some(min) = stats.min() {
+                map.insert(format!("counter.{name}.min"), min.into());
+            }
+
+            if let Some(max) = stats.max() {
+                map.insert(format!("counter.{name}.max"), max.into());
+            }
+
+            self.insert(time, &time_frame.host, map, &logger);
 
             logger.debug(&format!("Processed counter {name}"));
         });
 
         time_frame.timings.iter().for_each(|(name, stats)| {
-            self.insert(
-                time,
-                &time_frame.host,
-                HashMap::from([
-                    (format!("timing.{name}.count"), stats.count().into()),
-                    (format!("timing.{name}.sum"), stats.sum().into()),
-                    (format!("timing.{name}.std"), stats.std().into()),
-                    (format!("timing.{name}.median"), stats.median().into()),
-                    (format!("timing.{name}.p75"), stats.percentile(0.75).into()),
-                    (format!("timing.{name}.p90"), stats.percentile(0.90).into()),
-                ]),
-                &logger,
-            );
+            let mut map = HashMap::from([
+                (format!("timing.{name}.count"), stats.count().into()),
+                (format!("timing.{name}.sum"), stats.sum().into()),
+                (format!("timing.{name}.std"), stats.std().into()),
+                (format!("timing.{name}.median"), stats.median().into()),
+                (format!("timing.{name}.p75"), stats.percentile(0.75).into()),
+                (format!("timing.{name}.p90"), stats.percentile(0.90).into()),
+            ]);
+
+            if let Some(min) = stats.min() {
+                map.insert(format!("timing.{name}.min"), min.into());
+            }
+
+            if let Some(max) = stats.max() {
+                map.insert(format!("timing.{name}.max"), max.into());
+            }
+
+            self.insert(time, &time_frame.host, map, &logger);
 
             logger.debug(&format!("Processed timing {name}"));
         });

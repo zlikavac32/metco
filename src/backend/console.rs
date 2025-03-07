@@ -33,6 +33,14 @@ impl Backend for Console {
                 logger.info(&format!("    median: {}", stats.median()));
                 logger.info(&format!("    p75: {}", stats.percentile(0.75)));
                 logger.info(&format!("    p90: {}", stats.percentile(0.90)));
+
+                if let Some(min) = stats.min() {
+                    logger.info(&format!("    min: {}", min));
+                }
+
+                if let Some(max) = stats.max() {
+                    logger.info(&format!("    max: {}", max));
+                }
             });
         }
 
@@ -47,6 +55,14 @@ impl Backend for Console {
                 logger.info(&format!("    median: {}", stats.median()));
                 logger.info(&format!("    p75: {}", stats.percentile(0.75)));
                 logger.info(&format!("    p90: {}", stats.percentile(0.90)));
+
+                if let Some(min) = stats.min() {
+                    logger.info(&format!("    min: {}", min));
+                }
+
+                if let Some(max) = stats.max() {
+                    logger.info(&format!("    max: {}", max));
+                }
             });
         }
     }
