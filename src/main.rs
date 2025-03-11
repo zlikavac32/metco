@@ -260,13 +260,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 for metric in protocol::parse_protocol(payload) {
                     log::trace!("Parsed metric: {:?}", &metric);
 
-                    if !registry.add(&metric) {
-                        log::warn!("Overflow detected for metric: {}", metric.name());
-
-                        registry = flush(registry, config.clone());
-                        now = Instant::now();
-
-                        registry.add(&metric);
+                    if !registry.add(metric) {
+                        log::warn!("To big metric received, ignoring");
                     }
                 }
             }
