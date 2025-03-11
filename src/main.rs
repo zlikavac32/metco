@@ -214,7 +214,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let now = Utc::now();
 
-            if let Some(time_frame) = registry.finalize() {
+            if let Some((time_frame, overflowing_metrics)) = registry.finalize() {
+                for overflowing_metric in overflowing_metrics {
+                    log::warn!("Overflowing metric {}", overflowing_metric);
+                }
+
                 for mut backend in backends {
                     log::trace!("Notifying backend {:?}", backend.0);
                     backend

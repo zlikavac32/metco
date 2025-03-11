@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimerResolution {
@@ -109,39 +110,22 @@ pub struct TimeFrame {
     pub host: String,
 }
 
-impl TryFrom<Registry> for TimeFrame {
-    type Error = ();
+#[derive(Debug)]
+pub enum OverflowingMetric {
+    Counter(String),
+    Timing(String),
+}
 
-    fn try_from(value: Registry) -> Result<Self, Self::Error> {
-        let host = hostname::get()
-            .map_err(|_| ())?
-            .into_string()
-            .map_err(|_| ())?;
+impl Display for OverflowingMetric {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let (kind, name) = match self {
+            OverflowingMetric::Counter(name) => ("counter", name),
+            OverflowingMetric::Timing(name) => ("timing", name),
+        };
 
-        Ok(TimeFrame {
-            gauges: value.gauges,
-            counters: value.counters.into_iter().fold(
-                HashMap::default(),
-                |mut map, (name, list)| {
-                    if let Ok(statistics) = Statistics::new(list) {
-                        map.insert(name, statistics);
-                    }
-
-                    map
-                },
-            ),
-            timings: value
-                .timings
-                .into_iter()
-                .fold(HashMap::default(), |mut map, (name, list)| {
-                    if let Ok(statistics) = Statistics::new(list) {
-                        map.insert(name, statistics);
-                    }
-
-                    map
-                }),
-            host,
-        })
+        f.write_str(kind)?;
+        f.write_str(": ")?;
+        f.write_str(name)
     }
 }
 
@@ -203,8 +187,41 @@ impl Registry {
         }
     }
 
-    pub fn finalize(self) -> Option<TimeFrame> {
-        TimeFrame::try_from(self).ok()
+    pub fn finalize(self) -> Option<(TimeFrame, Vec<OverflowingMetric>)> {
+        let host = hostname::get().ok()?.into_string().ok()?;
+
+        let mut overflowing_metrics = vec![];
+
+        let time_frame = TimeFrame {
+            gauges: self.gauges,
+            counters: self.counters.into_iter().fold(
+                HashMap::default(),
+                |mut map, (name, list)| {
+                    if let Ok(statistics) = Statistics::new(list) {
+                        map.insert(name, statistics);
+                    } else {
+                        overflowing_metrics.push(OverflowingMetric::Counter(name));
+                    }
+
+                    map
+                },
+            ),
+            timings: self
+                .timings
+                .into_iter()
+                .fold(HashMap::default(), |mut map, (name, list)| {
+                    if let Ok(statistics) = Statistics::new(list) {
+                        map.insert(name, statistics);
+                    } else {
+                        overflowing_metrics.push(OverflowingMetric::Timing(name));
+                    }
+
+                    map
+                }),
+            host,
+        };
+
+        Some((time_frame, overflowing_metrics))
     }
 }
 
