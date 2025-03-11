@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Internal telemetry gauge metric name [#13](https://github.com/zlikavac32/metco/pull/13)
+
 ## 0.3.0 - 2025-03-11
 
 ### Added
