@@ -250,11 +250,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         log::info!("Waiting for data from socket");
 
         match socket.recv(&mut buff) {
-            Ok(_) => {
-                let payload = match std::str::from_utf8(&buff) {
+            Ok(size_read) => {
+                let payload = match std::str::from_utf8(&buff[0..size_read]) {
                     Ok(payload) => payload,
-                    Err(_) => {
-                        log::warn!("Invalid payload received of size: {}", buff.len());
+                    Err(err) => {
+                        log::warn!("Unable to handle payload as utf8: {}", err);
                         log::trace!("Payload: {:?}", &buff);
 
                         continue;
