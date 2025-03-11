@@ -10,22 +10,22 @@ impl Backend for Console {
         logger.info(&format!(
             "{} - host: {}",
             time.to_rfc3339(),
-            time_frame.host
+            time_frame.host()
         ));
 
-        if !time_frame.gauges.is_empty() {
+        if !time_frame.gauges().is_empty() {
             logger.info("Gauges:");
 
             time_frame
-                .gauges
+                .gauges()
                 .iter()
                 .for_each(|(name, value)| logger.info(&format!("  {name} - {value}")));
         }
 
-        if !time_frame.counters.is_empty() {
+        if !time_frame.counters().is_empty() {
             logger.info("Counters:");
 
-            time_frame.counters.iter().for_each(|(name, stats)| {
+            time_frame.counters().iter().for_each(|(name, stats)| {
                 logger.info(&format!("  {name}"));
                 logger.info(&format!("    count: {}", stats.count()));
                 logger.info(&format!("    sum: {}", stats.sum()));
@@ -44,10 +44,10 @@ impl Backend for Console {
             });
         }
 
-        if !time_frame.timings.is_empty() {
+        if !time_frame.timings().is_empty() {
             logger.info("Timings:");
 
-            time_frame.timings.iter().for_each(|(name, stats)| {
+            time_frame.timings().iter().for_each(|(name, stats)| {
                 logger.info(&format!("  {name}"));
                 logger.info(&format!("    count: {}", stats.count()));
                 logger.info(&format!("    sum: {}", stats.sum()));

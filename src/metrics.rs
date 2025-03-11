@@ -104,10 +104,28 @@ impl Statistics {
 
 #[derive(Debug)]
 pub struct TimeFrame {
-    pub counters: HashMap<String, Statistics>,
-    pub gauges: HashMap<String, i64>,
-    pub timings: HashMap<String, Statistics>,
-    pub host: String,
+    counters: HashMap<String, Statistics>,
+    gauges: HashMap<String, i64>,
+    timings: HashMap<String, Statistics>,
+    host: String,
+}
+
+impl TimeFrame {
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
+    pub fn counters(&self) -> &HashMap<String, Statistics> {
+        &self.counters
+    }
+
+    pub fn gauges(&self) -> &HashMap<String, i64> {
+        &self.gauges
+    }
+
+    pub fn timings(&self) -> &HashMap<String, Statistics> {
+        &self.timings
+    }
 }
 
 #[derive(Debug)]
