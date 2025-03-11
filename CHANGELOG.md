@@ -1,0 +1,24 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## Unreleased
+
+## 0.3.0 - 2025-03-11
+
+### Added
+
+- Internal telemetry [#12](https://github.com/zlikavac32/metco/pull/12)
+- Metrics for `min`/`max` [#11](https://github.com/zlikavac32/metco/pull/11)
+
+## 0.2.0 - 2025-03-05
+
+### Added
+
+- Host info in metrics [#5](https://github.com/zlikavac32/metco/pull/5)
+- ElasticSearch backend [#1](https://github.com/zlikavac32/metco/pull/1)
+
+
+## 0.1.0 - 2025-08-16
+
+- First release
