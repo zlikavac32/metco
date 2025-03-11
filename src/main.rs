@@ -333,7 +333,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 if gauges_count > 0 {
                     telemetry.add(Metric::new(
-                        "metco.gaguges_parsed".into(),
+                        "metco.gauges_parsed".into(),
                         MetricKind::Counter(gauges_count),
                     ));
                 }
