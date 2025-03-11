@@ -261,7 +261,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     log::trace!("Parsed metric: {:?}", &metric);
 
                     if !registry.add(&metric) {
-                        log::warn!("Overflow detected for metric: {}", &metric.name);
+                        log::warn!("Overflow detected for metric: {}", metric.name());
 
                         registry = flush(registry, config.clone());
                         now = Instant::now();

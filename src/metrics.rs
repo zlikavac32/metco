@@ -24,8 +24,18 @@ pub enum MetricKind {
 
 #[derive(Debug, PartialEq)]
 pub struct Metric {
-    pub name: String,
-    pub kind: MetricKind,
+    name: String,
+    kind: MetricKind,
+}
+
+impl Metric {
+    pub fn new(name: String, kind: MetricKind) -> Self {
+        Self { name, kind }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[derive(Debug)]
@@ -217,18 +227,9 @@ mod test {
         map.insert("test".into(), vec![2, 7]);
         map.insert("demo".into(), vec![32]);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Counter(2)
-        }));
-        assert!(registry.add(&Metric {
-            name: "demo".into(),
-            kind: MetricKind::Counter(32)
-        }));
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Counter(7)
-        }));
+        assert!(registry.add(&Metric::new("test".into(), MetricKind::Counter(2))));
+        assert!(registry.add(&Metric::new("demo".into(), MetricKind::Counter(32))));
+        assert!(registry.add(&Metric::new("test".into(), MetricKind::Counter(7))));
 
         assert_eq!(map, registry.counters)
     }
@@ -241,22 +242,22 @@ mod test {
         map.insert("test".into(), vec![2, 7_000]);
         map.insert("demo".into(), vec![32_000_000, 64_000_000_000]);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Timing(2, TimerResolution::NanoSeconds)
-        }));
-        assert!(registry.add(&Metric {
-            name: "demo".into(),
-            kind: MetricKind::Timing(32, TimerResolution::MilliSeconds)
-        }));
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Timing(7, TimerResolution::MicroSeconds)
-        }));
-        assert!(registry.add(&Metric {
-            name: "demo".into(),
-            kind: MetricKind::Timing(64, TimerResolution::Seconds)
-        }));
+        assert!(registry.add(&Metric::new(
+            "test".into(),
+            MetricKind::Timing(2, TimerResolution::NanoSeconds)
+        )));
+        assert!(registry.add(&Metric::new(
+            "demo".into(),
+            MetricKind::Timing(32, TimerResolution::MilliSeconds)
+        )));
+        assert!(registry.add(&Metric::new(
+            "test".into(),
+            MetricKind::Timing(7, TimerResolution::MicroSeconds)
+        )));
+        assert!(registry.add(&Metric::new(
+            "demo".into(),
+            MetricKind::Timing(64, TimerResolution::Seconds)
+        )));
 
         assert_eq!(map, registry.timings)
     }
@@ -268,37 +269,37 @@ mod test {
         let mut map = HashMap::default();
         map.insert("test".into(), 10);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Gauge(GaugeOperation::Modify(10))
-        }));
+        assert!(registry.add(&Metric::new(
+            "test".into(),
+            MetricKind::Gauge(GaugeOperation::Modify(10))
+        )));
 
         assert_eq!(map, registry.gauges);
 
         let mut map = HashMap::default();
         map.insert("test".into(), -10);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Gauge(GaugeOperation::Modify(-20))
-        }));
+        assert!(registry.add(&Metric::new(
+            "test".into(),
+            MetricKind::Gauge(GaugeOperation::Modify(-20))
+        )));
 
         assert_eq!(map, registry.gauges);
 
         let mut map = HashMap::default();
         map.insert("test".into(), 32);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Gauge(GaugeOperation::Set(32))
-        }));
+        assert!(registry.add(&Metric::new(
+            "test".into(),
+            MetricKind::Gauge(GaugeOperation::Set(32))
+        )));
 
         assert_eq!(map, registry.gauges);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Gauge(GaugeOperation::Remove)
-        }));
+        assert!(registry.add(&Metric::new(
+            "test".into(),
+            MetricKind::Gauge(GaugeOperation::Remove)
+        )));
 
         assert_eq!(HashMap::default(), registry.gauges);
     }
