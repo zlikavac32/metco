@@ -33,6 +33,18 @@ impl Metric {
     pub fn new(name: String, kind: MetricKind) -> Self {
         Self { name, kind }
     }
+
+    pub fn is_counter(&self) -> bool {
+        matches!(self.kind, MetricKind::Counter(_))
+    }
+
+    pub fn is_timer(&self) -> bool {
+        matches!(self.kind, MetricKind::Timing(_, _))
+    }
+
+    pub fn is_gauge(&self) -> bool {
+        matches!(self.kind, MetricKind::Gauge(_))
+    }
 }
 
 #[derive(Debug)]
