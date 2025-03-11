@@ -15,7 +15,7 @@ use figment::Figment;
 use serde::Deserialize;
 use stderrlog::Timestamp;
 
-use crate::metrics::Registry;
+use crate::metrics::{GaugeOperation, Metric, MetricKind, Registry, TimerResolution};
 
 mod backend;
 mod metrics;
@@ -133,14 +133,28 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut now = Instant::now();
 
-    fn flush(registry: Registry, config: Arc<Config>) -> Registry {
+    fn flush(
+        registry: Registry,
+        mut telemetry: Registry,
+        config: Arc<Config>,
+    ) -> (Registry, Registry) {
         if registry.is_empty() {
             log::info!("Registry is empty, nothing to aggregate");
 
-            return registry;
+            return (registry, telemetry);
         }
 
         let new_registry = registry.new_with_gauges();
+        let new_telemetry = telemetry.new_with_gauges();
+
+        telemetry.add(Metric::new(
+            "metco.memory_usage".into(),
+            MetricKind::Gauge(GaugeOperation::Set(
+                memory_stats::memory_stats()
+                    .expect("Memory usage should be computed")
+                    .physical_mem as i64,
+            )),
+        ));
 
         type CreatedBackend = (String, Box<dyn backend::Backend>);
         type CreateBackendError = (String, Box<dyn Error>);
@@ -214,26 +228,45 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let now = Utc::now();
 
-            if let Some(time_frame) = registry.finalize() {
-                for mut backend in backends {
-                    log::trace!("Notifying backend {:?}", backend.0);
+            let time_frames = [registry, telemetry]
+                .into_iter()
+                .filter_map(|registry| {
+                    if let Some((time_frame, overflowing_metrics)) = registry.finalize() {
+                        for overflowing_metric in overflowing_metrics {
+                            log::warn!("Overflowing metric {}", overflowing_metric);
+                        }
+
+                        Some(time_frame)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            for mut backend in backends {
+                log::trace!("Notifying backend {:?}", backend.0);
+
+                for time_frame in &time_frames {
                     backend
                         .1
-                        .publish(&now, &time_frame, backend::Logger::new(backend.0));
+                        .publish(&now, time_frame, backend::Logger::new(backend.0.clone()));
                 }
             }
         });
 
-        new_registry
+        (new_registry, new_telemetry)
     }
 
     let mut registry = Registry::default();
+    let mut telemetry = Registry::default();
+
+    let mut buff = [0; 2048];
 
     loop {
         let elapsed = now.elapsed();
 
-        if elapsed > config.refresh_interval {
-            registry = flush(registry, config.clone());
+        if elapsed >= config.refresh_interval {
+            (registry, telemetry) = flush(registry, telemetry, config.clone());
             now = Instant::now();
         } else {
             socket
@@ -241,34 +274,76 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .expect("Why are we unable to set read timeout?");
         }
 
-        let mut buff = [0; 2048];
-
         log::info!("Waiting for data from socket");
 
         match socket.recv(&mut buff) {
-            Ok(_) => {
-                let payload = match std::str::from_utf8(&buff) {
+            Ok(size_read) => {
+                let now = Instant::now();
+
+                telemetry.add(Metric::new(
+                    "metco.bytes_read".into(),
+                    MetricKind::Counter(size_read as u64),
+                ));
+
+                let payload = match std::str::from_utf8(&buff[..size_read]) {
                     Ok(payload) => payload,
-                    Err(_) => {
-                        log::warn!("Invalid payload received of size: {}", buff.len());
+                    Err(err) => {
+                        log::warn!("Unable to handle payload as utf8: {}", err);
                         log::trace!("Payload: {:?}", &buff);
 
                         continue;
                     }
                 };
 
-                for metric in protocol::parse_protocol(payload) {
+                let metrics = protocol::parse_protocol(payload);
+
+                let mut counters_count = 0;
+                let mut timers_count = 0;
+                let mut gauges_count = 0;
+
+                for metric in metrics {
                     log::trace!("Parsed metric: {:?}", &metric);
 
-                    if !registry.add(&metric) {
-                        log::warn!("Overflow detected for metric: {}", &metric.name);
+                    if metric.is_counter() {
+                        counters_count += 1;
+                    } else if metric.is_timer() {
+                        timers_count += 1;
+                    } else if metric.is_gauge() {
+                        gauges_count += 1;
+                    }
 
-                        registry = flush(registry, config.clone());
-                        now = Instant::now();
-
-                        registry.add(&metric);
+                    if !registry.add(metric) {
+                        log::warn!("To big metric received, ignoring");
                     }
                 }
+
+                if counters_count > 0 {
+                    telemetry.add(Metric::new(
+                        "metco.counters_parsed".into(),
+                        MetricKind::Counter(counters_count),
+                    ));
+                }
+
+                if timers_count > 0 {
+                    telemetry.add(Metric::new(
+                        "metco.timers_parsed".into(),
+                        MetricKind::Counter(timers_count),
+                    ));
+                }
+
+                if gauges_count > 0 {
+                    telemetry.add(Metric::new(
+                        "metco.gaguges_parsed".into(),
+                        MetricKind::Counter(gauges_count),
+                    ));
+                }
+
+                let elapsed = now.elapsed();
+
+                telemetry.add(Metric::new(
+                    "metco.iteration_duration".into(),
+                    MetricKind::Timing(elapsed.as_nanos() as u64, TimerResolution::NanoSeconds),
+                ));
             }
             Err(err) => {
                 if err.kind() != ErrorKind::WouldBlock {

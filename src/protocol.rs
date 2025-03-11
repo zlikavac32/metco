@@ -102,7 +102,7 @@ fn parse_metric(input: &str) -> IResult<&str, Metric> {
 
     let (input, kind) = parse_kind(input)?;
 
-    Ok((input, Metric { name, kind }))
+    Ok((input, Metric::new(name, kind)))
 }
 
 pub fn parse_protocol(input: &str) -> Vec<Metric> {
@@ -116,10 +116,7 @@ mod test {
     #[test]
     fn counter_can_be_parsed() {
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Counter(12),
-            }],
+            vec![Metric::new("abc".to_string(), MetricKind::Counter(12),)],
             parse_protocol("abc|c|12")
         );
     }
@@ -127,10 +124,7 @@ mod test {
     #[test]
     fn counter_with_escaped_chars_can_be_parsed() {
         assert_eq!(
-            vec![Metric {
-                name: "a\\b|c".to_string(),
-                kind: MetricKind::Counter(12),
-            }],
+            vec![Metric::new("a\\b|c".to_string(), MetricKind::Counter(12),)],
             parse_protocol("a\\\\b\\|c|c|12")
         );
     }
@@ -146,42 +140,42 @@ mod test {
     #[test]
     fn gauge_can_be_parsed() {
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Gauge(GaugeOperation::Set(12)),
-            }],
+            vec![Metric::new(
+                "abc".to_string(),
+                MetricKind::Gauge(GaugeOperation::Set(12)),
+            )],
             parse_protocol("abc|g|12")
         );
 
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Gauge(GaugeOperation::Set(-12)),
-            }],
+            vec![Metric::new(
+                "abc".to_string(),
+                MetricKind::Gauge(GaugeOperation::Set(-12)),
+            )],
             parse_protocol("abc|g|-12")
         );
 
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Gauge(GaugeOperation::Modify(12)),
-            }],
+            vec![Metric::new(
+                "abc".to_string(),
+                MetricKind::Gauge(GaugeOperation::Modify(12)),
+            )],
             parse_protocol("abc|g|+=12")
         );
 
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Gauge(GaugeOperation::Modify(-12)),
-            }],
+            vec![Metric::new(
+                "abc".to_string(),
+                MetricKind::Gauge(GaugeOperation::Modify(-12)),
+            )],
             parse_protocol("abc|g|-=12")
         );
 
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Gauge(GaugeOperation::Remove),
-            }],
+            vec![Metric::new(
+                "abc".to_string(),
+                MetricKind::Gauge(GaugeOperation::Remove),
+            )],
             parse_protocol("abc|g|x")
         );
     }
@@ -202,42 +196,42 @@ mod test {
     #[test]
     fn timer_can_be_parsed() {
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Timing(123, TimerResolution::MilliSeconds),
-            }],
+            vec![Metric::new(
+                "abc".to_string(),
+                MetricKind::Timing(123, TimerResolution::MilliSeconds),
+            )],
             parse_protocol("abc|t|123")
         );
 
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Timing(123, TimerResolution::MilliSeconds),
-            }],
+            vec![Metric::new(
+                "abc".to_string(),
+                MetricKind::Timing(123, TimerResolution::MilliSeconds),
+            )],
             parse_protocol("abc|t|123|ms")
         );
 
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Timing(123, TimerResolution::Seconds),
-            }],
+            vec![Metric::new(
+                "abc".to_string(),
+                MetricKind::Timing(123, TimerResolution::Seconds),
+            )],
             parse_protocol("abc|t|123|s")
         );
 
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Timing(123, TimerResolution::MicroSeconds),
-            }],
+            vec![Metric::new(
+                "abc".to_string(),
+                MetricKind::Timing(123, TimerResolution::MicroSeconds),
+            )],
             parse_protocol("abc|t|123|us")
         );
 
         assert_eq!(
-            vec![Metric {
-                name: "abc".to_string(),
-                kind: MetricKind::Timing(123, TimerResolution::NanoSeconds),
-            }],
+            vec![Metric::new(
+                "abc".to_string(),
+                MetricKind::Timing(123, TimerResolution::NanoSeconds),
+            )],
             parse_protocol("abc|t|123|ns")
         );
     }

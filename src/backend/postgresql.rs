@@ -71,10 +71,10 @@ on conflict (name, kind, time, host)
 
 impl Backend for PostgreSQL {
     fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame, logger: Logger) {
-        time_frame.gauges.iter().for_each(|(name, value)| {
+        time_frame.gauges().iter().for_each(|(name, value)| {
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Gauge,
                 name,
                 *value as f64,
@@ -84,10 +84,10 @@ impl Backend for PostgreSQL {
             logger.debug(&format!("Processed gauge {name}"));
         });
 
-        time_frame.counters.iter().for_each(|(name, stats)| {
+        time_frame.counters().iter().for_each(|(name, stats)| {
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Counter,
                 &format!("{name}.count"),
                 stats.count() as f64,
@@ -95,7 +95,7 @@ impl Backend for PostgreSQL {
             );
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Counter,
                 &format!("{name}.sum"),
                 stats.sum() as f64,
@@ -103,7 +103,7 @@ impl Backend for PostgreSQL {
             );
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Counter,
                 &format!("{name}.std"),
                 stats.std(),
@@ -111,7 +111,7 @@ impl Backend for PostgreSQL {
             );
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Counter,
                 &format!("{name}.median"),
                 stats.median(),
@@ -119,7 +119,7 @@ impl Backend for PostgreSQL {
             );
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Counter,
                 &format!("{name}.p75"),
                 stats.percentile(0.75) as f64,
@@ -127,7 +127,7 @@ impl Backend for PostgreSQL {
             );
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Counter,
                 &format!("{name}.p90"),
                 stats.percentile(0.90) as f64,
@@ -137,7 +137,7 @@ impl Backend for PostgreSQL {
             if let Some(min) = stats.min() {
                 self.insert(
                     time,
-                    &time_frame.host,
+                    time_frame.host(),
                     MetricKind::Counter,
                     &format!("{name}.min"),
                     min as f64,
@@ -148,7 +148,7 @@ impl Backend for PostgreSQL {
             if let Some(max) = stats.max() {
                 self.insert(
                     time,
-                    &time_frame.host,
+                    time_frame.host(),
                     MetricKind::Counter,
                     &format!("{name}.max"),
                     max as f64,
@@ -159,10 +159,10 @@ impl Backend for PostgreSQL {
             logger.debug(&format!("Processed counter {name}"));
         });
 
-        time_frame.timings.iter().for_each(|(name, stats)| {
+        time_frame.timings().iter().for_each(|(name, stats)| {
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Timing,
                 &format!("{name}.count"),
                 stats.count() as f64,
@@ -170,7 +170,7 @@ impl Backend for PostgreSQL {
             );
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Timing,
                 &format!("{name}.sum"),
                 stats.sum() as f64,
@@ -178,7 +178,7 @@ impl Backend for PostgreSQL {
             );
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Timing,
                 &format!("{name}.std"),
                 stats.std(),
@@ -186,7 +186,7 @@ impl Backend for PostgreSQL {
             );
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Timing,
                 &format!("{name}.median"),
                 stats.median(),
@@ -194,7 +194,7 @@ impl Backend for PostgreSQL {
             );
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Timing,
                 &format!("{name}.p75"),
                 stats.percentile(0.75) as f64,
@@ -202,7 +202,7 @@ impl Backend for PostgreSQL {
             );
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 MetricKind::Timing,
                 &format!("{name}.p90"),
                 stats.percentile(0.90) as f64,
@@ -212,7 +212,7 @@ impl Backend for PostgreSQL {
             if let Some(min) = stats.min() {
                 self.insert(
                     time,
-                    &time_frame.host,
+                    time_frame.host(),
                     MetricKind::Timing,
                     &format!("{name}.min"),
                     min as f64,
@@ -223,7 +223,7 @@ impl Backend for PostgreSQL {
             if let Some(max) = stats.max() {
                 self.insert(
                     time,
-                    &time_frame.host,
+                    time_frame.host(),
                     MetricKind::Timing,
                     &format!("{name}.max"),
                     max as f64,

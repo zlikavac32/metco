@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimerResolution {
@@ -24,8 +25,26 @@ pub enum MetricKind {
 
 #[derive(Debug, PartialEq)]
 pub struct Metric {
-    pub name: String,
-    pub kind: MetricKind,
+    name: String,
+    kind: MetricKind,
+}
+
+impl Metric {
+    pub fn new(name: String, kind: MetricKind) -> Self {
+        Self { name, kind }
+    }
+
+    pub fn is_counter(&self) -> bool {
+        matches!(self.kind, MetricKind::Counter(_))
+    }
+
+    pub fn is_timer(&self) -> bool {
+        matches!(self.kind, MetricKind::Timing(_, _))
+    }
+
+    pub fn is_gauge(&self) -> bool {
+        matches!(self.kind, MetricKind::Gauge(_))
+    }
 }
 
 #[derive(Debug)]
@@ -97,45 +116,46 @@ impl Statistics {
 
 #[derive(Debug)]
 pub struct TimeFrame {
-    pub counters: HashMap<String, Statistics>,
-    pub gauges: HashMap<String, i64>,
-    pub timings: HashMap<String, Statistics>,
-    pub host: String,
+    counters: HashMap<String, Statistics>,
+    gauges: HashMap<String, i64>,
+    timings: HashMap<String, Statistics>,
+    host: String,
 }
 
-impl TryFrom<Registry> for TimeFrame {
-    type Error = ();
+impl TimeFrame {
+    pub fn host(&self) -> &str {
+        &self.host
+    }
 
-    fn try_from(value: Registry) -> Result<Self, Self::Error> {
-        let host = hostname::get()
-            .map_err(|_| ())?
-            .into_string()
-            .map_err(|_| ())?;
+    pub fn counters(&self) -> &HashMap<String, Statistics> {
+        &self.counters
+    }
 
-        Ok(TimeFrame {
-            gauges: value.gauges,
-            counters: value.counters.into_iter().fold(
-                HashMap::default(),
-                |mut map, (name, list)| {
-                    if let Ok(statistics) = Statistics::new(list) {
-                        map.insert(name, statistics);
-                    }
+    pub fn gauges(&self) -> &HashMap<String, i64> {
+        &self.gauges
+    }
 
-                    map
-                },
-            ),
-            timings: value
-                .timings
-                .into_iter()
-                .fold(HashMap::default(), |mut map, (name, list)| {
-                    if let Ok(statistics) = Statistics::new(list) {
-                        map.insert(name, statistics);
-                    }
+    pub fn timings(&self) -> &HashMap<String, Statistics> {
+        &self.timings
+    }
+}
 
-                    map
-                }),
-            host,
-        })
+#[derive(Debug)]
+pub enum OverflowingMetric {
+    Counter(String),
+    Timing(String),
+}
+
+impl Display for OverflowingMetric {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let (kind, name) = match self {
+            OverflowingMetric::Counter(name) => ("counter", name),
+            OverflowingMetric::Timing(name) => ("timing", name),
+        };
+
+        f.write_str(kind)?;
+        f.write_str(": ")?;
+        f.write_str(name)
     }
 }
 
@@ -153,32 +173,30 @@ impl Registry {
 }
 
 impl Registry {
-    pub fn add(&mut self, metric: &Metric) -> bool {
-        match &metric.kind {
-            MetricKind::Counter(value) => self
-                .counters
-                .entry(metric.name.clone())
-                .or_default()
-                .push(*value),
+    pub fn add(&mut self, metric: Metric) -> bool {
+        match metric.kind {
+            MetricKind::Counter(value) => self.counters.entry(metric.name).or_default().push(value),
             MetricKind::Timing(value, resolution) => {
-                self.timings.entry(metric.name.clone()).or_default().push(
-                    value
-                        * match resolution {
-                            TimerResolution::Seconds => 1_000_000_000,
-                            TimerResolution::MilliSeconds => 1_000_000,
-                            TimerResolution::MicroSeconds => 1_000,
-                            TimerResolution::NanoSeconds => 1,
-                        },
+                self.timings.entry(metric.name).or_default().push(
+                    match value.checked_mul(match resolution {
+                        TimerResolution::Seconds => 1_000_000_000,
+                        TimerResolution::MilliSeconds => 1_000_000,
+                        TimerResolution::MicroSeconds => 1_000,
+                        TimerResolution::NanoSeconds => 1,
+                    }) {
+                        None => return false,
+                        Some(res) => res,
+                    },
                 )
             }
             MetricKind::Gauge(operation) => match operation {
                 GaugeOperation::Set(value) => {
-                    self.gauges.insert(metric.name.clone(), *value);
+                    self.gauges.insert(metric.name, value);
                 }
                 GaugeOperation::Modify(value) => {
-                    let val = self.gauges.entry(metric.name.clone()).or_default();
+                    let val = self.gauges.entry(metric.name).or_default();
 
-                    match val.checked_add(*value) {
+                    match val.checked_add(value) {
                         None => return false,
                         Some(res) => *val = res,
                     }
@@ -199,8 +217,41 @@ impl Registry {
         }
     }
 
-    pub fn finalize(self) -> Option<TimeFrame> {
-        TimeFrame::try_from(self).ok()
+    pub fn finalize(self) -> Option<(TimeFrame, Vec<OverflowingMetric>)> {
+        let host = hostname::get().ok()?.into_string().ok()?;
+
+        let mut overflowing_metrics = vec![];
+
+        let time_frame = TimeFrame {
+            gauges: self.gauges,
+            counters: self.counters.into_iter().fold(
+                HashMap::default(),
+                |mut map, (name, list)| {
+                    if let Ok(statistics) = Statistics::new(list) {
+                        map.insert(name, statistics);
+                    } else {
+                        overflowing_metrics.push(OverflowingMetric::Counter(name));
+                    }
+
+                    map
+                },
+            ),
+            timings: self
+                .timings
+                .into_iter()
+                .fold(HashMap::default(), |mut map, (name, list)| {
+                    if let Ok(statistics) = Statistics::new(list) {
+                        map.insert(name, statistics);
+                    } else {
+                        overflowing_metrics.push(OverflowingMetric::Timing(name));
+                    }
+
+                    map
+                }),
+            host,
+        };
+
+        Some((time_frame, overflowing_metrics))
     }
 }
 
@@ -217,18 +268,9 @@ mod test {
         map.insert("test".into(), vec![2, 7]);
         map.insert("demo".into(), vec![32]);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Counter(2)
-        }));
-        assert!(registry.add(&Metric {
-            name: "demo".into(),
-            kind: MetricKind::Counter(32)
-        }));
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Counter(7)
-        }));
+        assert!(registry.add(Metric::new("test".into(), MetricKind::Counter(2))));
+        assert!(registry.add(Metric::new("demo".into(), MetricKind::Counter(32))));
+        assert!(registry.add(Metric::new("test".into(), MetricKind::Counter(7))));
 
         assert_eq!(map, registry.counters)
     }
@@ -241,22 +283,22 @@ mod test {
         map.insert("test".into(), vec![2, 7_000]);
         map.insert("demo".into(), vec![32_000_000, 64_000_000_000]);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Timing(2, TimerResolution::NanoSeconds)
-        }));
-        assert!(registry.add(&Metric {
-            name: "demo".into(),
-            kind: MetricKind::Timing(32, TimerResolution::MilliSeconds)
-        }));
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Timing(7, TimerResolution::MicroSeconds)
-        }));
-        assert!(registry.add(&Metric {
-            name: "demo".into(),
-            kind: MetricKind::Timing(64, TimerResolution::Seconds)
-        }));
+        assert!(registry.add(Metric::new(
+            "test".into(),
+            MetricKind::Timing(2, TimerResolution::NanoSeconds)
+        )));
+        assert!(registry.add(Metric::new(
+            "demo".into(),
+            MetricKind::Timing(32, TimerResolution::MilliSeconds)
+        )));
+        assert!(registry.add(Metric::new(
+            "test".into(),
+            MetricKind::Timing(7, TimerResolution::MicroSeconds)
+        )));
+        assert!(registry.add(Metric::new(
+            "demo".into(),
+            MetricKind::Timing(64, TimerResolution::Seconds)
+        )));
 
         assert_eq!(map, registry.timings)
     }
@@ -268,37 +310,37 @@ mod test {
         let mut map = HashMap::default();
         map.insert("test".into(), 10);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Gauge(GaugeOperation::Modify(10))
-        }));
+        assert!(registry.add(Metric::new(
+            "test".into(),
+            MetricKind::Gauge(GaugeOperation::Modify(10))
+        )));
 
         assert_eq!(map, registry.gauges);
 
         let mut map = HashMap::default();
         map.insert("test".into(), -10);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Gauge(GaugeOperation::Modify(-20))
-        }));
+        assert!(registry.add(Metric::new(
+            "test".into(),
+            MetricKind::Gauge(GaugeOperation::Modify(-20))
+        )));
 
         assert_eq!(map, registry.gauges);
 
         let mut map = HashMap::default();
         map.insert("test".into(), 32);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Gauge(GaugeOperation::Set(32))
-        }));
+        assert!(registry.add(Metric::new(
+            "test".into(),
+            MetricKind::Gauge(GaugeOperation::Set(32))
+        )));
 
         assert_eq!(map, registry.gauges);
 
-        assert!(registry.add(&Metric {
-            name: "test".into(),
-            kind: MetricKind::Gauge(GaugeOperation::Remove)
-        }));
+        assert!(registry.add(Metric::new(
+            "test".into(),
+            MetricKind::Gauge(GaugeOperation::Remove)
+        )));
 
         assert_eq!(HashMap::default(), registry.gauges);
     }

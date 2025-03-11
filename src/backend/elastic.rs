@@ -61,10 +61,10 @@ impl ElasticSearch {
 
 impl Backend for ElasticSearch {
     fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame, logger: Logger) {
-        time_frame.gauges.iter().for_each(|(name, value)| {
+        time_frame.gauges().iter().for_each(|(name, value)| {
             self.insert(
                 time,
-                &time_frame.host,
+                time_frame.host(),
                 HashMap::from([(format!("gauge.{name}"), (*value).into())]),
                 &logger,
             );
@@ -72,7 +72,7 @@ impl Backend for ElasticSearch {
             logger.debug(&format!("Processed gauge {name}"));
         });
 
-        time_frame.counters.iter().for_each(|(name, stats)| {
+        time_frame.counters().iter().for_each(|(name, stats)| {
             let mut map = HashMap::from([
                 (format!("counter.{name}.count"), stats.count().into()),
                 (format!("counter.{name}.sum"), stats.sum().into()),
@@ -90,12 +90,12 @@ impl Backend for ElasticSearch {
                 map.insert(format!("counter.{name}.max"), max.into());
             }
 
-            self.insert(time, &time_frame.host, map, &logger);
+            self.insert(time, time_frame.host(), map, &logger);
 
             logger.debug(&format!("Processed counter {name}"));
         });
 
-        time_frame.timings.iter().for_each(|(name, stats)| {
+        time_frame.timings().iter().for_each(|(name, stats)| {
             let mut map = HashMap::from([
                 (format!("timing.{name}.count"), stats.count().into()),
                 (format!("timing.{name}.sum"), stats.sum().into()),
@@ -113,7 +113,7 @@ impl Backend for ElasticSearch {
                 map.insert(format!("timing.{name}.max"), max.into());
             }
 
-            self.insert(time, &time_frame.host, map, &logger);
+            self.insert(time, time_frame.host(), map, &logger);
 
             logger.debug(&format!("Processed timing {name}"));
         });
