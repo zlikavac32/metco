@@ -1,20 +1,81 @@
 use crate::backend::{Backend, Logger};
 use crate::metrics::TimeFrame;
 use chrono::{DateTime, Utc};
-use postgres::types::ToSql;
 use std::fmt::{Debug, Formatter};
 
 /*
-create type metric_kind as enum ('gauge', 'counter', 'timing');
+Used table structure is bellow.
 
-create table metrics
+create table metric_counters
 (
     name  text        not null,
-    kind  metric_kind not null,
     time  timestamptz not null,
     host  text        not null,
     value float8,
-    primary key (name, kind, time, host)
+    primary key (name, time, host)
+);
+
+create table metric_timers
+(
+    name  text        not null,
+    time  timestamptz not null,
+    host  text        not null,
+    value float8,
+    primary key (name, time, host)
+);
+
+create table metric_gauges
+(
+    name  text        not null,
+    time  timestamptz not null,
+    host  text        not null,
+    value float8,
+    primary key (name, time, host)
+);
+
+It's also possible to use https://github.com/timescale/timescaledb and
+slightly modify create commands above to use hyper-tables.
+
+create table metric_counters
+(
+    name  text        not null,
+    time  timestamptz not null,
+    host  text        not null,
+    value float8,
+    primary key (name, time, host)
+)
+with (
+  timescaledb.hypertable,
+  timescaledb.partition_column='time',
+  timescaledb.segmentby='name'
+);
+
+create table metric_timers
+(
+    name  text        not null,
+    time  timestamptz not null,
+    host  text        not null,
+    value float8,
+    primary key (name, time, host)
+)
+with (
+  timescaledb.hypertable,
+  timescaledb.partition_column='time',
+  timescaledb.segmentby='name'
+);
+
+create table metric_gauges
+(
+    name  text        not null,
+    time  timestamptz not null,
+    host  text        not null,
+    value float8,
+    primary key (name, time, host)
+)
+with (
+  timescaledb.hypertable,
+  timescaledb.partition_column='time',
+  timescaledb.segmentby='name'
 );
  */
 
@@ -28,15 +89,11 @@ impl Debug for PostgreSQL {
     }
 }
 
-#[derive(Debug, ToSql)]
-#[postgres(name = "metric_kind")]
+#[derive(Debug)]
 enum MetricKind {
-    #[postgres(name = "gauge")]
     Gauge,
-    #[postgres(name = "counter")]
     Counter,
-    #[postgres(name = "timing")]
-    Timing,
+    Timer,
 }
 
 impl PostgreSQL {
@@ -53,17 +110,22 @@ impl PostgreSQL {
         value: f64,
         logger: &Logger,
     ) {
-        let sql = r"
-insert into metrics (name, kind, time, host, value)
-values ($1, $2, $3, $4, $5)
-on conflict (name, kind, time, host)
-    do nothing
-";
+        let table_name = match metric_kind {
+            MetricKind::Gauge => "metric_gauges",
+            MetricKind::Counter => "metric_counters",
+            MetricKind::Timer => "metric_timers",
+        };
 
-        if let Err(err) = self
-            .client
-            .execute(sql, &[&name, &metric_kind, time, &host, &value])
-        {
+        let sql = format!(
+            r"
+insert into {table_name} (name, time, host, value)
+values ($1, $2, $3, $4)
+on conflict (name, time, host)
+    do nothing
+"
+        );
+
+        if let Err(err) = self.client.execute(&sql, &[&name, time, &host, &value]) {
             logger.error(&format!("Insert record failed: {err}"));
         }
     }
@@ -163,7 +225,7 @@ impl Backend for PostgreSQL {
             self.insert(
                 time,
                 time_frame.host(),
-                MetricKind::Timing,
+                MetricKind::Timer,
                 &format!("{name}.count"),
                 stats.count() as f64,
                 &logger,
@@ -171,7 +233,7 @@ impl Backend for PostgreSQL {
             self.insert(
                 time,
                 time_frame.host(),
-                MetricKind::Timing,
+                MetricKind::Timer,
                 &format!("{name}.sum"),
                 stats.sum() as f64,
                 &logger,
@@ -179,7 +241,7 @@ impl Backend for PostgreSQL {
             self.insert(
                 time,
                 time_frame.host(),
-                MetricKind::Timing,
+                MetricKind::Timer,
                 &format!("{name}.std"),
                 stats.std(),
                 &logger,
@@ -187,7 +249,7 @@ impl Backend for PostgreSQL {
             self.insert(
                 time,
                 time_frame.host(),
-                MetricKind::Timing,
+                MetricKind::Timer,
                 &format!("{name}.median"),
                 stats.median(),
                 &logger,
@@ -195,7 +257,7 @@ impl Backend for PostgreSQL {
             self.insert(
                 time,
                 time_frame.host(),
-                MetricKind::Timing,
+                MetricKind::Timer,
                 &format!("{name}.p75"),
                 stats.percentile(0.75) as f64,
                 &logger,
@@ -203,7 +265,7 @@ impl Backend for PostgreSQL {
             self.insert(
                 time,
                 time_frame.host(),
-                MetricKind::Timing,
+                MetricKind::Timer,
                 &format!("{name}.p90"),
                 stats.percentile(0.90) as f64,
                 &logger,
@@ -213,7 +275,7 @@ impl Backend for PostgreSQL {
                 self.insert(
                     time,
                     time_frame.host(),
-                    MetricKind::Timing,
+                    MetricKind::Timer,
                     &format!("{name}.min"),
                     min as f64,
                     &logger,
@@ -224,7 +286,7 @@ impl Backend for PostgreSQL {
                 self.insert(
                     time,
                     time_frame.host(),
-                    MetricKind::Timing,
+                    MetricKind::Timer,
                     &format!("{name}.max"),
                     max as f64,
                     &logger,
