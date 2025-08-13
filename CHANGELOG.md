@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Split PostgreSQL `metrics` table into multiple [#14](https://github.com/zlikavac32/metco/pull/14)
+
 ### Fixed
 
 - Internal telemetry gauge metric name [#13](https://github.com/zlikavac32/metco/pull/13)
