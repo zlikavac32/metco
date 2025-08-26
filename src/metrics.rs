@@ -24,14 +24,25 @@ pub enum MetricKind {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Metric {
+pub struct Identifier {
     name: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Metric {
+    identifier: Identifier,
     kind: MetricKind,
 }
 
+impl Identifier {
+    pub fn without_tags(name: String) -> Self {
+        Self { name }
+    }
+}
+
 impl Metric {
-    pub fn new(name: String, kind: MetricKind) -> Self {
-        Self { name, kind }
+    pub fn new(identifier: Identifier, kind: MetricKind) -> Self {
+        Self { identifier, kind }
     }
 
     pub fn is_counter(&self) -> bool {
@@ -175,9 +186,16 @@ impl Registry {
 impl Registry {
     pub fn add(&mut self, metric: Metric) -> bool {
         match metric.kind {
-            MetricKind::Counter(value) => self.counters.entry(metric.name).or_default().push(value),
-            MetricKind::Timing(value, resolution) => {
-                self.timings.entry(metric.name).or_default().push(
+            MetricKind::Counter(value) => self
+                .counters
+                .entry(metric.identifier.name)
+                .or_default()
+                .push(value),
+            MetricKind::Timing(value, resolution) => self
+                .timings
+                .entry(metric.identifier.name)
+                .or_default()
+                .push(
                     match value.checked_mul(match resolution {
                         TimerResolution::Seconds => 1_000_000_000,
                         TimerResolution::MilliSeconds => 1_000_000,
@@ -187,14 +205,13 @@ impl Registry {
                         None => return false,
                         Some(res) => res,
                     },
-                )
-            }
+                ),
             MetricKind::Gauge(operation) => match operation {
                 GaugeOperation::Set(value) => {
-                    self.gauges.insert(metric.name, value);
+                    self.gauges.insert(metric.identifier.name, value);
                 }
                 GaugeOperation::Modify(value) => {
-                    let val = self.gauges.entry(metric.name).or_default();
+                    let val = self.gauges.entry(metric.identifier.name).or_default();
 
                     match val.checked_add(value) {
                         None => return false,
@@ -202,7 +219,7 @@ impl Registry {
                     }
                 }
                 GaugeOperation::Remove => {
-                    self.gauges.remove(&metric.name);
+                    self.gauges.remove(&metric.identifier.name);
                 }
             },
         }
@@ -268,9 +285,18 @@ mod test {
         map.insert("test".into(), vec![2, 7]);
         map.insert("demo".into(), vec![32]);
 
-        assert!(registry.add(Metric::new("test".into(), MetricKind::Counter(2))));
-        assert!(registry.add(Metric::new("demo".into(), MetricKind::Counter(32))));
-        assert!(registry.add(Metric::new("test".into(), MetricKind::Counter(7))));
+        assert!(registry.add(Metric::new(
+            Identifier::without_tags("test".into()),
+            MetricKind::Counter(2)
+        )));
+        assert!(registry.add(Metric::new(
+            Identifier::without_tags("demo".into()),
+            MetricKind::Counter(32)
+        )));
+        assert!(registry.add(Metric::new(
+            Identifier::without_tags("test".into()),
+            MetricKind::Counter(7)
+        )));
 
         assert_eq!(map, registry.counters)
     }
@@ -284,19 +310,19 @@ mod test {
         map.insert("demo".into(), vec![32_000_000, 64_000_000_000]);
 
         assert!(registry.add(Metric::new(
-            "test".into(),
+            Identifier::without_tags("test".into()),
             MetricKind::Timing(2, TimerResolution::NanoSeconds)
         )));
         assert!(registry.add(Metric::new(
-            "demo".into(),
+            Identifier::without_tags("demo".into()),
             MetricKind::Timing(32, TimerResolution::MilliSeconds)
         )));
         assert!(registry.add(Metric::new(
-            "test".into(),
+            Identifier::without_tags("test".into()),
             MetricKind::Timing(7, TimerResolution::MicroSeconds)
         )));
         assert!(registry.add(Metric::new(
-            "demo".into(),
+            Identifier::without_tags("demo".into()),
             MetricKind::Timing(64, TimerResolution::Seconds)
         )));
 
@@ -311,7 +337,7 @@ mod test {
         map.insert("test".into(), 10);
 
         assert!(registry.add(Metric::new(
-            "test".into(),
+            Identifier::without_tags("test".into()),
             MetricKind::Gauge(GaugeOperation::Modify(10))
         )));
 
@@ -321,7 +347,7 @@ mod test {
         map.insert("test".into(), -10);
 
         assert!(registry.add(Metric::new(
-            "test".into(),
+            Identifier::without_tags("test".into()),
             MetricKind::Gauge(GaugeOperation::Modify(-20))
         )));
 
@@ -331,14 +357,14 @@ mod test {
         map.insert("test".into(), 32);
 
         assert!(registry.add(Metric::new(
-            "test".into(),
+            Identifier::without_tags("test".into()),
             MetricKind::Gauge(GaugeOperation::Set(32))
         )));
 
         assert_eq!(map, registry.gauges);
 
         assert!(registry.add(Metric::new(
-            "test".into(),
+            Identifier::without_tags("test".into()),
             MetricKind::Gauge(GaugeOperation::Remove)
         )));
 

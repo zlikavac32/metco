@@ -15,7 +15,7 @@ use figment::Figment;
 use serde::Deserialize;
 use stderrlog::Timestamp;
 
-use crate::metrics::{GaugeOperation, Metric, MetricKind, Registry, TimerResolution};
+use crate::metrics::{GaugeOperation, Identifier, Metric, MetricKind, Registry, TimerResolution};
 
 mod backend;
 mod metrics;
@@ -148,7 +148,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let new_telemetry = telemetry.new_with_gauges();
 
         telemetry.add(Metric::new(
-            "metco.memory_usage".into(),
+            Identifier::without_tags("metco.memory_usage".into()),
             MetricKind::Gauge(GaugeOperation::Set(
                 memory_stats::memory_stats()
                     .expect("Memory usage should be computed")
@@ -281,7 +281,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let now = Instant::now();
 
                 telemetry.add(Metric::new(
-                    "metco.bytes_read".into(),
+                    Identifier::without_tags("metco.bytes_read".into()),
                     MetricKind::Counter(size_read as u64),
                 ));
 
@@ -319,21 +319,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 if counters_count > 0 {
                     telemetry.add(Metric::new(
-                        "metco.counters_parsed".into(),
+                        Identifier::without_tags("metco.counters_parsed".into()),
                         MetricKind::Counter(counters_count),
                     ));
                 }
 
                 if timers_count > 0 {
                     telemetry.add(Metric::new(
-                        "metco.timers_parsed".into(),
+                        Identifier::without_tags("metco.timers_parsed".into()),
                         MetricKind::Counter(timers_count),
                     ));
                 }
 
                 if gauges_count > 0 {
                     telemetry.add(Metric::new(
-                        "metco.gauges_parsed".into(),
+                        Identifier::without_tags("metco.gauges_parsed".into()),
                         MetricKind::Counter(gauges_count),
                     ));
                 }
@@ -341,7 +341,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let elapsed = now.elapsed();
 
                 telemetry.add(Metric::new(
-                    "metco.iteration_duration".into(),
+                    Identifier::without_tags("metco.iteration_duration".into()),
                     MetricKind::Timing(elapsed.as_nanos() as u64, TimerResolution::NanoSeconds),
                 ));
             }
