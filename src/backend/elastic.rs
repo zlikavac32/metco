@@ -2,7 +2,7 @@ use crate::backend::{Backend, Logger};
 use crate::metrics::TimeFrame;
 use chrono::{DateTime, Utc};
 use reqwest::blocking::Client;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
@@ -30,8 +30,8 @@ impl ElasticSearch {
     fn insert(
         &mut self,
         time: &DateTime<Utc>,
-        host: &str,
         mut map: HashMap<String, Value>,
+        tags: &HashMap<String, String>,
         logger: &Logger,
     ) {
         let index = self
@@ -39,8 +39,14 @@ impl ElasticSearch {
             .clone()
             .replace("{date}", &time.format("%Y-%m-%d").to_string());
 
-        map.insert("host".into(), host.into());
         map.insert("timestamp".into(), time.to_rfc3339().into());
+        map.insert(
+            "tags".into(),
+            tags.iter()
+                .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+                .collect::<Map<String, Value>>()
+                .into(),
+        );
 
         let err = match self
             .client
@@ -61,41 +67,55 @@ impl ElasticSearch {
 
 impl Backend for ElasticSearch {
     fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame, logger: Logger) {
-        time_frame.gauges().iter().for_each(|(name, value)| {
+        time_frame.gauges().iter().for_each(|(identifier, value)| {
             self.insert(
                 time,
-                time_frame.host(),
-                HashMap::from([(format!("gauge.{name}"), (*value).into())]),
+                HashMap::from([(format!("gauge.{}", identifier.name()), (*value).into())]),
+                identifier.tags(),
                 &logger,
             );
 
-            logger.debug(&format!("Processed gauge {name}"));
+            logger.debug(&format!(
+                "Processed gauge {} with tags {:?}",
+                identifier.name(),
+                identifier.tags()
+            ));
         });
 
-        time_frame.counters().iter().for_each(|(name, stats)| {
-            let mut map = HashMap::from([
-                (format!("counter.{name}.count"), stats.count().into()),
-                (format!("counter.{name}.sum"), stats.sum().into()),
-                (format!("counter.{name}.std"), stats.std().into()),
-                (format!("counter.{name}.median"), stats.median().into()),
-                (format!("counter.{name}.p75"), stats.percentile(0.75).into()),
-                (format!("counter.{name}.p90"), stats.percentile(0.90).into()),
-            ]);
+        time_frame
+            .counters()
+            .iter()
+            .for_each(|(identifier, stats)| {
+                let name = identifier.name();
 
-            if let Some(min) = stats.min() {
-                map.insert(format!("counter.{name}.min"), min.into());
-            }
+                let mut map = HashMap::from([
+                    (format!("counter.{name}.count"), stats.count().into()),
+                    (format!("counter.{name}.sum"), stats.sum().into()),
+                    (format!("counter.{name}.std"), stats.std().into()),
+                    (format!("counter.{name}.median"), stats.median().into()),
+                    (format!("counter.{name}.p75"), stats.percentile(0.75).into()),
+                    (format!("counter.{name}.p90"), stats.percentile(0.90).into()),
+                ]);
 
-            if let Some(max) = stats.max() {
-                map.insert(format!("counter.{name}.max"), max.into());
-            }
+                if let Some(min) = stats.min() {
+                    map.insert(format!("counter.{name}.min"), min.into());
+                }
 
-            self.insert(time, time_frame.host(), map, &logger);
+                if let Some(max) = stats.max() {
+                    map.insert(format!("counter.{name}.max"), max.into());
+                }
 
-            logger.debug(&format!("Processed counter {name}"));
-        });
+                self.insert(time, map, identifier.tags(), &logger);
 
-        time_frame.timings().iter().for_each(|(name, stats)| {
+                logger.debug(&format!(
+                    "Processed counter {name} with tags {:?}",
+                    identifier.tags()
+                ));
+            });
+
+        time_frame.timings().iter().for_each(|(identifier, stats)| {
+            let name = identifier.name();
+
             let mut map = HashMap::from([
                 (format!("timing.{name}.count"), stats.count().into()),
                 (format!("timing.{name}.sum"), stats.sum().into()),
@@ -113,9 +133,12 @@ impl Backend for ElasticSearch {
                 map.insert(format!("timing.{name}.max"), max.into());
             }
 
-            self.insert(time, time_frame.host(), map, &logger);
+            self.insert(time, map, identifier.tags(), &logger);
 
-            logger.debug(&format!("Processed timing {name}"));
+            logger.debug(&format!(
+                "Processed timing {name} with tags {:?}",
+                identifier.tags()
+            ));
         });
     }
 }

@@ -21,7 +21,11 @@ Also, I do plan to keep this as simple as possible because I like Linux philosop
 
 Protocol is simple text based protocol. Metrics are in form of `name|type|value` and optionally some additional fields separated by `|` depending on metric type.
 
-Metric name is any valid UTF-8 sequence of at least one byte. It's backends job to sanitize name if needed. Pipe character and backslash can be escaped using backslash.
+Metric name is any valid UTF-8 sequence of at least one byte. It's backends job to sanitize name if needed. Special characters in `name` part are `|`, `;` and `\` and if used, must be escaped using `\`.
+
+Each metric can have associated tags that are used to fine tune aggregations. Tags are a part of `name` in format `name=value` separated by `;` without a trailing `;`. If `=` or `\` is used as a part of tag name, it must be escaped using `\`. If `;`, `\` or `|` is used as a part of tag value, it must be escaped using `\`.
+
+Assigning two tags to a metric would look like `name;tag1=value1;tag2=value2`.
 
 Type can be any of `c`, `t` or `g`.
 

@@ -122,6 +122,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = CLI::parse();
     init_logging(&cli);
 
+    let host = hostname::get()
+        .expect("Unable to load hostname")
+        .into_string()
+        .expect("Hostname is not valid UTF-8 string");
+
     let config: Arc<Config> = Arc::new(
         Figment::new()
             .merge(Toml::file(cli.config_path))
@@ -137,6 +142,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         registry: Registry,
         mut telemetry: Registry,
         config: Arc<Config>,
+        host: String,
     ) -> (Registry, Registry) {
         if registry.is_empty() {
             log::info!("Registry is empty, nothing to aggregate");
@@ -148,7 +154,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let new_telemetry = telemetry.new_with_gauges();
 
         telemetry.add(Metric::new(
-            Identifier::without_tags("metco.memory_usage".into()),
+            Identifier::with_tags(
+                "metco.memory_usage".into(),
+                HashMap::from([("host".into(), host)]),
+            ),
             MetricKind::Gauge(GaugeOperation::Set(
                 memory_stats::memory_stats()
                     .expect("Memory usage should be computed")
@@ -266,7 +275,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let elapsed = now.elapsed();
 
         if elapsed >= config.refresh_interval {
-            (registry, telemetry) = flush(registry, telemetry, config.clone());
+            (registry, telemetry) = flush(registry, telemetry, config.clone(), host.clone());
             now = Instant::now();
         } else {
             socket
@@ -281,7 +290,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let now = Instant::now();
 
                 telemetry.add(Metric::new(
-                    Identifier::without_tags("metco.bytes_read".into()),
+                    Identifier::with_tags(
+                        "metco.bytes_read".into(),
+                        HashMap::from([("host".into(), host.clone())]),
+                    ),
                     MetricKind::Counter(size_read as u64),
                 ));
 
@@ -319,21 +331,30 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 if counters_count > 0 {
                     telemetry.add(Metric::new(
-                        Identifier::without_tags("metco.counters_parsed".into()),
+                        Identifier::with_tags(
+                            "metco.counters_parsed".into(),
+                            HashMap::from([("host".into(), host.clone())]),
+                        ),
                         MetricKind::Counter(counters_count),
                     ));
                 }
 
                 if timers_count > 0 {
                     telemetry.add(Metric::new(
-                        Identifier::without_tags("metco.timers_parsed".into()),
+                        Identifier::with_tags(
+                            "metco.timers_parsed".into(),
+                            HashMap::from([("host".into(), host.clone())]),
+                        ),
                         MetricKind::Counter(timers_count),
                     ));
                 }
 
                 if gauges_count > 0 {
                     telemetry.add(Metric::new(
-                        Identifier::without_tags("metco.gauges_parsed".into()),
+                        Identifier::with_tags(
+                            "metco.gauges_parsed".into(),
+                            HashMap::from([("host".into(), host.clone())]),
+                        ),
                         MetricKind::Counter(gauges_count),
                     ));
                 }
@@ -341,7 +362,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let elapsed = now.elapsed();
 
                 telemetry.add(Metric::new(
-                    Identifier::without_tags("metco.iteration_duration".into()),
+                    Identifier::with_tags(
+                        "metco.iteration_duration".into(),
+                        HashMap::from([("host".into(), host.clone())]),
+                    ),
                     MetricKind::Timing(elapsed.as_nanos() as u64, TimerResolution::NanoSeconds),
                 ));
             }
