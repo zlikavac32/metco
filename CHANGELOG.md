@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 0.4.0 - 2025-08-31
+
 ### Added
 
 - Tags are now supported [#15](https://github.com/zlikavac32/metco/pull/15)
