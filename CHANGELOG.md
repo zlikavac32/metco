@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Tags are now supported [#15](https://github.com/zlikavac32/metco/pull/15)
+
 ### Changed
 
 - Split PostgreSQL `metrics` table into multiple [#14](https://github.com/zlikavac32/metco/pull/14)
@@ -11,6 +15,10 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Internal telemetry gauge metric name [#13](https://github.com/zlikavac32/metco/pull/13)
+
+### Removed
+
+- Hostname information is now responsibility of the client and can be sent (if needed) as a tag [#15](https://github.com/zlikavac32/metco/pull/15)
 
 ## 0.3.0 - 2025-03-11
 

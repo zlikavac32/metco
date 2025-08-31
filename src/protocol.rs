@@ -1,12 +1,13 @@
 use nom::branch::alt;
 use nom::bytes::complete::{escaped_transform, is_not, tag};
 use nom::character::complete::{char, digit1};
-use nom::combinator::{map, map_res, recognize, value};
+use nom::combinator::{map, map_res, opt, recognize, value};
 use nom::multi::separated_list1;
 use nom::sequence::tuple;
 use nom::IResult;
+use std::collections::HashMap;
 
-use crate::metrics::{GaugeOperation, Metric, MetricKind, TimerResolution};
+use crate::metrics::{GaugeOperation, Identifier, Metric, MetricKind, TimerResolution};
 
 fn parse_counter(input: &str) -> IResult<&str, MetricKind> {
     let (input, _) = tag("c|")(input)?;
@@ -91,18 +92,64 @@ fn parse_kind(input: &str) -> IResult<&str, MetricKind> {
     alt((parse_counter, parse_timing, parse_gauge))(input)
 }
 
-fn parse_metric(input: &str) -> IResult<&str, Metric> {
+fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
     let (input, name) = escaped_transform(
-        is_not("|\\"),
+        is_not("|\\;"),
         '\\',
-        alt((value("\\", tag("\\")), value("|", tag("|")))),
+        alt((
+            value("\\", tag("\\")),
+            value("|", tag("|")),
+            value(";", tag(";")),
+        )),
     )(input)?;
+
+    let (input, tags) = opt(map(
+        tuple((
+            tag(";"),
+            separated_list1(
+                tag(";"),
+                map(
+                    tuple((
+                        escaped_transform(
+                            is_not("\\="),
+                            '\\',
+                            alt((value("\\", tag("\\")), value("=", tag("=")))),
+                        ),
+                        tag("="),
+                        escaped_transform(
+                            is_not("|\\;"),
+                            '\\',
+                            alt((
+                                value("\\", tag("\\")),
+                                value(";", tag(";")),
+                                value("|", tag("|")),
+                            )),
+                        ),
+                    )),
+                    |(name, _, value)| (name, value),
+                ),
+            ),
+        )),
+        |(_, tags)| tags,
+    ))(input)?;
+
+    Ok((
+        input,
+        match tags {
+            None => Identifier::without_tags(name),
+            Some(tags) => Identifier::with_tags(name, HashMap::from_iter(tags)),
+        },
+    ))
+}
+
+fn parse_metric(input: &str) -> IResult<&str, Metric> {
+    let (input, identifier) = parse_identifier(input)?;
 
     let (input, _) = char('|')(input)?;
 
     let (input, kind) = parse_kind(input)?;
 
-    Ok((input, Metric::new(name, kind)))
+    Ok((input, Metric::new(identifier, kind)))
 }
 
 pub fn parse_protocol(input: &str) -> Vec<Metric> {
@@ -112,11 +159,32 @@ pub fn parse_protocol(input: &str) -> Vec<Metric> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn metric_identifier_with_tags_can_be_parsed() {
+        assert_eq!(
+            Ok((
+                "|c",
+                Identifier::with_tags(
+                    "abc".into(),
+                    HashMap::from([
+                        ("tag1".into(), "value;123".into()),
+                        ("tag=2".into(), "te=st3".into())
+                    ])
+                )
+            )),
+            parse_identifier("abc;tag1=value\\;123;tag\\=2=te=st3|c")
+        );
+    }
 
     #[test]
     fn counter_can_be_parsed() {
         assert_eq!(
-            vec![Metric::new("abc".to_string(), MetricKind::Counter(12),)],
+            vec![Metric::new(
+                Identifier::without_tags("abc".to_string()),
+                MetricKind::Counter(12),
+            )],
             parse_protocol("abc|c|12")
         );
     }
@@ -124,8 +192,11 @@ mod test {
     #[test]
     fn counter_with_escaped_chars_can_be_parsed() {
         assert_eq!(
-            vec![Metric::new("a\\b|c".to_string(), MetricKind::Counter(12),)],
-            parse_protocol("a\\\\b\\|c|c|12")
+            vec![Metric::new(
+                Identifier::without_tags("a\\b|c;".to_string()),
+                MetricKind::Counter(12),
+            )],
+            parse_protocol("a\\\\b\\|c\\;|c|12")
         );
     }
 
@@ -141,7 +212,7 @@ mod test {
     fn gauge_can_be_parsed() {
         assert_eq!(
             vec![Metric::new(
-                "abc".to_string(),
+                Identifier::without_tags("abc".to_string()),
                 MetricKind::Gauge(GaugeOperation::Set(12)),
             )],
             parse_protocol("abc|g|12")
@@ -149,7 +220,7 @@ mod test {
 
         assert_eq!(
             vec![Metric::new(
-                "abc".to_string(),
+                Identifier::without_tags("abc".to_string()),
                 MetricKind::Gauge(GaugeOperation::Set(-12)),
             )],
             parse_protocol("abc|g|-12")
@@ -157,7 +228,7 @@ mod test {
 
         assert_eq!(
             vec![Metric::new(
-                "abc".to_string(),
+                Identifier::without_tags("abc".to_string()),
                 MetricKind::Gauge(GaugeOperation::Modify(12)),
             )],
             parse_protocol("abc|g|+=12")
@@ -165,7 +236,7 @@ mod test {
 
         assert_eq!(
             vec![Metric::new(
-                "abc".to_string(),
+                Identifier::without_tags("abc".to_string()),
                 MetricKind::Gauge(GaugeOperation::Modify(-12)),
             )],
             parse_protocol("abc|g|-=12")
@@ -173,7 +244,7 @@ mod test {
 
         assert_eq!(
             vec![Metric::new(
-                "abc".to_string(),
+                Identifier::without_tags("abc".to_string()),
                 MetricKind::Gauge(GaugeOperation::Remove),
             )],
             parse_protocol("abc|g|x")
@@ -197,7 +268,7 @@ mod test {
     fn timer_can_be_parsed() {
         assert_eq!(
             vec![Metric::new(
-                "abc".to_string(),
+                Identifier::without_tags("abc".to_string()),
                 MetricKind::Timing(123, TimerResolution::MilliSeconds),
             )],
             parse_protocol("abc|t|123")
@@ -205,7 +276,7 @@ mod test {
 
         assert_eq!(
             vec![Metric::new(
-                "abc".to_string(),
+                Identifier::without_tags("abc".to_string()),
                 MetricKind::Timing(123, TimerResolution::MilliSeconds),
             )],
             parse_protocol("abc|t|123|ms")
@@ -213,7 +284,7 @@ mod test {
 
         assert_eq!(
             vec![Metric::new(
-                "abc".to_string(),
+                Identifier::without_tags("abc".to_string()),
                 MetricKind::Timing(123, TimerResolution::Seconds),
             )],
             parse_protocol("abc|t|123|s")
@@ -221,7 +292,7 @@ mod test {
 
         assert_eq!(
             vec![Metric::new(
-                "abc".to_string(),
+                Identifier::without_tags("abc".to_string()),
                 MetricKind::Timing(123, TimerResolution::MicroSeconds),
             )],
             parse_protocol("abc|t|123|us")
@@ -229,7 +300,7 @@ mod test {
 
         assert_eq!(
             vec![Metric::new(
-                "abc".to_string(),
+                Identifier::without_tags("abc".to_string()),
                 MetricKind::Timing(123, TimerResolution::NanoSeconds),
             )],
             parse_protocol("abc|t|123|ns")

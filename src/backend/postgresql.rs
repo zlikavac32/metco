@@ -1,82 +1,102 @@
 use crate::backend::{Backend, Logger};
 use crate::metrics::TimeFrame;
 use chrono::{DateTime, Utc};
+use postgres_types::Json;
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-
 /*
 Used table structure is bellow.
+
+create extension btree_gin;
 
 create table metric_counters
 (
     name  text        not null,
     time  timestamptz not null,
-    host  text        not null,
-    value float8,
-    primary key (name, time, host)
+    value float8      not null,
+    tags  jsonb       not null
 );
+
+create index index_metric_counters on metric_counters (name, time desc);
+create index index_metric_counters_tags on metric_counters using gin (name, tags, time);
 
 create table metric_timers
 (
     name  text        not null,
     time  timestamptz not null,
-    host  text        not null,
-    value float8,
-    primary key (name, time, host)
+    value float8      not null,
+    tags  jsonb       not null
 );
+
+create index index_metric_timers on metric_timers (name, time desc);
+create index index_metric_timers_tags on metric_timers using gin (name, tags, time);
 
 create table metric_gauges
 (
     name  text        not null,
     time  timestamptz not null,
-    host  text        not null,
-    value float8,
-    primary key (name, time, host)
+    value float8      not null,
+    tags  jsonb       not null
 );
+
+create index index_metric_gauges on metric_gauges (name, time desc);
+create index index_metric_gauges_tags on metric_gauges using gin (name, tags, time);
 
 It's also possible to use https://github.com/timescale/timescaledb and
 slightly modify create commands above to use hyper-tables.
 
+create extension btree_gin;
+
 create table metric_counters
 (
     name  text        not null,
     time  timestamptz not null,
-    host  text        not null,
-    value float8,
-    primary key (name, time, host)
+    value float8      not null,
+    tags  jsonb       not null
 )
-with (
-  timescaledb.hypertable,
-  timescaledb.partition_column='time',
-  timescaledb.segmentby='name'
-);
+    with (
+        timescaledb.hypertable,
+        timescaledb.partition_column = 'time',
+        timescaledb.segmentby = 'name',
+        timescaledb.create_default_indexes = false
+        );
+
+create index index_metric_counters on metric_counters (name, time desc);
+create index index_metric_counters_tags on metric_counters using gin (name, tags, time);
 
 create table metric_timers
 (
     name  text        not null,
     time  timestamptz not null,
-    host  text        not null,
-    value float8,
-    primary key (name, time, host)
+    value float8      not null,
+    tags  jsonb       not null
 )
-with (
-  timescaledb.hypertable,
-  timescaledb.partition_column='time',
-  timescaledb.segmentby='name'
-);
+    with (
+        timescaledb.hypertable,
+        timescaledb.partition_column = 'time',
+        timescaledb.segmentby = 'name',
+        timescaledb.create_default_indexes = false
+        );
+
+create index index_metric_timers on metric_timers (name, time desc);
+create index index_metric_timers_tags on metric_timers using gin (name, tags, time);
 
 create table metric_gauges
 (
     name  text        not null,
     time  timestamptz not null,
-    host  text        not null,
-    value float8,
-    primary key (name, time, host)
+    value float8      not null,
+    tags  jsonb       not null
 )
-with (
-  timescaledb.hypertable,
-  timescaledb.partition_column='time',
-  timescaledb.segmentby='name'
-);
+    with (
+        timescaledb.hypertable,
+        timescaledb.partition_column = 'time',
+        timescaledb.segmentby = 'name',
+        timescaledb.create_default_indexes = false
+        );
+
+create index index_metric_gauges on metric_gauges (name, time desc);
+create index index_metric_gauges_tags on metric_gauges using gin (name, tags, time);
  */
 
 pub struct PostgreSQL {
@@ -104,9 +124,9 @@ impl PostgreSQL {
     fn insert(
         &mut self,
         time: &DateTime<Utc>,
-        host: &str,
         metric_kind: MetricKind,
         name: &str,
+        tags: &HashMap<String, String>,
         value: f64,
         logger: &Logger,
     ) {
@@ -118,14 +138,15 @@ impl PostgreSQL {
 
         let sql = format!(
             r"
-insert into {table_name} (name, time, host, value)
+insert into {table_name} (name, time, value, tags)
 values ($1, $2, $3, $4)
-on conflict (name, time, host)
-    do nothing
 "
         );
 
-        if let Err(err) = self.client.execute(&sql, &[&name, time, &host, &value]) {
+        if let Err(err) = self
+            .client
+            .execute(&sql, &[&name, time, &value, &Json::<_>(tags)])
+        {
             logger.error(&format!("Insert record failed: {err}"));
         }
     }
@@ -133,65 +154,153 @@ on conflict (name, time, host)
 
 impl Backend for PostgreSQL {
     fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame, logger: Logger) {
-        time_frame.gauges().iter().for_each(|(name, value)| {
+        time_frame.gauges().iter().for_each(|(identifier, value)| {
             self.insert(
                 time,
-                time_frame.host(),
                 MetricKind::Gauge,
-                name,
+                identifier.name(),
+                identifier.tags(),
                 *value as f64,
                 &logger,
             );
 
-            logger.debug(&format!("Processed gauge {name}"));
+            logger.debug(&format!(
+                "Processed gauge {} with tags {:?}",
+                identifier.name(),
+                identifier.tags()
+            ));
         });
 
-        time_frame.counters().iter().for_each(|(name, stats)| {
+        time_frame
+            .counters()
+            .iter()
+            .for_each(|(identifier, stats)| {
+                let name = identifier.name();
+                let tags = identifier.tags();
+
+                self.insert(
+                    time,
+                    MetricKind::Counter,
+                    &format!("{name}.count"),
+                    tags,
+                    stats.count() as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Counter,
+                    &format!("{name}.sum"),
+                    tags,
+                    stats.sum() as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Counter,
+                    &format!("{name}.std"),
+                    tags,
+                    stats.std(),
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Counter,
+                    &format!("{name}.median"),
+                    tags,
+                    stats.median(),
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Counter,
+                    &format!("{name}.p75"),
+                    tags,
+                    stats.percentile(0.75) as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Counter,
+                    &format!("{name}.p90"),
+                    tags,
+                    stats.percentile(0.90) as f64,
+                    &logger,
+                );
+
+                if let Some(min) = stats.min() {
+                    self.insert(
+                        time,
+                        MetricKind::Counter,
+                        &format!("{name}.min"),
+                        tags,
+                        min as f64,
+                        &logger,
+                    );
+                }
+
+                if let Some(max) = stats.max() {
+                    self.insert(
+                        time,
+                        MetricKind::Counter,
+                        &format!("{name}.max"),
+                        tags,
+                        max as f64,
+                        &logger,
+                    );
+                }
+
+                logger.debug(&format!("Processed counter {name} with tags {tags:?}"));
+            });
+
+        time_frame.timings().iter().for_each(|(identifier, stats)| {
+            let name = identifier.name();
+            let tags = identifier.tags();
+
             self.insert(
                 time,
-                time_frame.host(),
-                MetricKind::Counter,
+                MetricKind::Timer,
                 &format!("{name}.count"),
+                tags,
                 stats.count() as f64,
                 &logger,
             );
             self.insert(
                 time,
-                time_frame.host(),
-                MetricKind::Counter,
+                MetricKind::Timer,
                 &format!("{name}.sum"),
+                tags,
                 stats.sum() as f64,
                 &logger,
             );
             self.insert(
                 time,
-                time_frame.host(),
-                MetricKind::Counter,
+                MetricKind::Timer,
                 &format!("{name}.std"),
+                tags,
                 stats.std(),
                 &logger,
             );
             self.insert(
                 time,
-                time_frame.host(),
-                MetricKind::Counter,
+                MetricKind::Timer,
                 &format!("{name}.median"),
+                tags,
                 stats.median(),
                 &logger,
             );
             self.insert(
                 time,
-                time_frame.host(),
-                MetricKind::Counter,
+                MetricKind::Timer,
                 &format!("{name}.p75"),
+                tags,
                 stats.percentile(0.75) as f64,
                 &logger,
             );
             self.insert(
                 time,
-                time_frame.host(),
-                MetricKind::Counter,
+                MetricKind::Timer,
                 &format!("{name}.p90"),
+                tags,
                 stats.percentile(0.90) as f64,
                 &logger,
             );
@@ -199,9 +308,9 @@ impl Backend for PostgreSQL {
             if let Some(min) = stats.min() {
                 self.insert(
                     time,
-                    time_frame.host(),
-                    MetricKind::Counter,
+                    MetricKind::Timer,
                     &format!("{name}.min"),
+                    tags,
                     min as f64,
                     &logger,
                 );
@@ -210,90 +319,15 @@ impl Backend for PostgreSQL {
             if let Some(max) = stats.max() {
                 self.insert(
                     time,
-                    time_frame.host(),
-                    MetricKind::Counter,
+                    MetricKind::Timer,
                     &format!("{name}.max"),
+                    tags,
                     max as f64,
                     &logger,
                 );
             }
 
-            logger.debug(&format!("Processed counter {name}"));
-        });
-
-        time_frame.timings().iter().for_each(|(name, stats)| {
-            self.insert(
-                time,
-                time_frame.host(),
-                MetricKind::Timer,
-                &format!("{name}.count"),
-                stats.count() as f64,
-                &logger,
-            );
-            self.insert(
-                time,
-                time_frame.host(),
-                MetricKind::Timer,
-                &format!("{name}.sum"),
-                stats.sum() as f64,
-                &logger,
-            );
-            self.insert(
-                time,
-                time_frame.host(),
-                MetricKind::Timer,
-                &format!("{name}.std"),
-                stats.std(),
-                &logger,
-            );
-            self.insert(
-                time,
-                time_frame.host(),
-                MetricKind::Timer,
-                &format!("{name}.median"),
-                stats.median(),
-                &logger,
-            );
-            self.insert(
-                time,
-                time_frame.host(),
-                MetricKind::Timer,
-                &format!("{name}.p75"),
-                stats.percentile(0.75) as f64,
-                &logger,
-            );
-            self.insert(
-                time,
-                time_frame.host(),
-                MetricKind::Timer,
-                &format!("{name}.p90"),
-                stats.percentile(0.90) as f64,
-                &logger,
-            );
-
-            if let Some(min) = stats.min() {
-                self.insert(
-                    time,
-                    time_frame.host(),
-                    MetricKind::Timer,
-                    &format!("{name}.min"),
-                    min as f64,
-                    &logger,
-                );
-            }
-
-            if let Some(max) = stats.max() {
-                self.insert(
-                    time,
-                    time_frame.host(),
-                    MetricKind::Timer,
-                    &format!("{name}.max"),
-                    max as f64,
-                    &logger,
-                );
-            }
-
-            logger.debug(&format!("Processed timing {name}"));
+            logger.debug(&format!("Processed timing {name} with tags {tags:?}"));
         });
     }
 }
