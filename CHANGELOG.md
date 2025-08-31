@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 0.5.0 - 2025-08-31
+
 ### Changed
 
 - Internal telemetry now uses single counter `metco.metrics_parsed` for parsed metrics [#16](https://github.com/zlikavac32/metco/pull/16)
