@@ -333,7 +333,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     telemetry.add(Metric::new(
                         Identifier::with_tags(
                             "metco.metrics_parsed".into(),
-                            HashMap::from([("host".into(), host.clone()), ("kind".into(), "counter".into())]),
+                            HashMap::from([
+                                ("host".into(), host.clone()),
+                                ("kind".into(), "counter".into()),
+                            ]),
                         ),
                         MetricKind::Counter(counters_count),
                     ));
@@ -343,7 +346,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     telemetry.add(Metric::new(
                         Identifier::with_tags(
                             "metco.metrics_parsed".into(),
-                            HashMap::from([("host".into(), host.clone()), ("kind".into(), "timer".into())]),
+                            HashMap::from([
+                                ("host".into(), host.clone()),
+                                ("kind".into(), "timer".into()),
+                            ]),
                         ),
                         MetricKind::Counter(timers_count),
                     ));
@@ -353,7 +359,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     telemetry.add(Metric::new(
                         Identifier::with_tags(
                             "metco.metrics_parsed".into(),
-                            HashMap::from([("host".into(), host.clone()), ("kind".into(), "gauge".into())]),
+                            HashMap::from([
+                                ("host".into(), host.clone()),
+                                ("kind".into(), "gauge".into()),
+                            ]),
                         ),
                         MetricKind::Counter(gauges_count),
                     ));
