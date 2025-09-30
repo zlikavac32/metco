@@ -307,7 +307,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 };
 
-                let metrics = protocol::parse_protocol(payload);
+                let (metrics, rest) = protocol::parse_protocol(payload);
 
                 let mut counters_count = 0;
                 let mut timers_count = 0;
@@ -327,6 +327,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                     if !registry.add(metric) {
                         log::warn!("To big metric received, ignoring");
                     }
+                }
+
+                if let Some(rest) = rest {
+                    log::info!("Failed to process bytes: {rest:?}");
+
+                    telemetry.add(Metric::new(
+                        Identifier::with_tags(
+                            "metco.bytes_not_parsed".into(),
+                            HashMap::from([("host".into(), host.clone())]),
+                        ),
+                        MetricKind::Counter(rest.len() as u64),
+                    ));
                 }
 
                 if counters_count > 0 {

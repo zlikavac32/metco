@@ -1,13 +1,13 @@
+use crate::metrics::{GaugeOperation, Identifier, Metric, MetricKind, TimerResolution};
 use nom::branch::alt;
 use nom::bytes::complete::{escaped_transform, is_not, tag};
 use nom::character::complete::{char, digit1};
 use nom::combinator::{map, map_res, opt, recognize, value};
+use nom::error::ErrorKind;
 use nom::multi::separated_list1;
 use nom::sequence::tuple;
 use nom::IResult;
 use std::collections::HashMap;
-
-use crate::metrics::{GaugeOperation, Identifier, Metric, MetricKind, TimerResolution};
 
 fn parse_counter(input: &str) -> IResult<&str, MetricKind> {
     let (input, _) = tag("c|")(input)?;
@@ -142,18 +142,34 @@ fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
     ))
 }
 
-fn parse_metric(input: &str) -> IResult<&str, Metric> {
-    let (input, identifier) = parse_identifier(input)?;
+fn parse_metric(original: &str) -> IResult<&str, Metric> {
+    let input = original;
 
-    let (input, _) = char('|')(input)?;
+    let (input, identifier) = parse_identifier(input)
+        .map_err(|_| nom::Err::Error(nom::error::Error::new(original, ErrorKind::Fail)))?;
 
-    let (input, kind) = parse_kind(input)?;
+    let (input, _) = char('|')(input).map_err(|_: nom::Err<nom::error::Error<_>>| {
+        nom::Err::Error(nom::error::Error::new(original, ErrorKind::Fail))
+    })?;
+
+    let (input, kind) = parse_kind(input)
+        .map_err(|_| nom::Err::Error(nom::error::Error::new(original, ErrorKind::Fail)))?;
 
     Ok((input, Metric::new(identifier, kind)))
 }
 
-pub fn parse_protocol(input: &str) -> Vec<Metric> {
-    separated_list1(char('\n'), parse_metric)(input).map_or_else(|_| vec![], |(_, metrics)| metrics)
+pub fn parse_protocol(input: &str) -> (Vec<Metric>, Option<String>) {
+    match separated_list1(char('\n'), parse_metric)(input) {
+        Ok((input, metrics)) => (
+            metrics,
+            if input.is_empty() {
+                None
+            } else {
+                Some(input.to_string())
+            },
+        ),
+        Err(_) => (vec![], Some(input.to_string())),
+    }
 }
 
 #[cfg(test)]
@@ -181,10 +197,13 @@ mod test {
     #[test]
     fn counter_can_be_parsed() {
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Counter(12),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Counter(12),
+                )],
+                None
+            ),
             parse_protocol("abc|c|12")
         );
     }
@@ -192,133 +211,185 @@ mod test {
     #[test]
     fn counter_with_escaped_chars_can_be_parsed() {
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("a\\b|c;".to_string()),
-                MetricKind::Counter(12),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("a\\b|c;".to_string()),
+                    MetricKind::Counter(12),
+                )],
+                None,
+            ),
             parse_protocol("a\\\\b\\|c\\;|c|12")
         );
     }
 
     #[test]
     fn counter_with_very_big_number_is_not_parsed_but_does_not_crash_program() {
-        assert!(parse_protocol(
+        assert_eq!(
+            (vec![], Some("abc|c|123456789123456789123456789123456789123456789123456789123456789123456789".into())),
+            parse_protocol(
             "abc|c|123456789123456789123456789123456789123456789123456789123456789123456789"
         )
-        .is_empty());
+        );
     }
 
     #[test]
     fn gauge_can_be_parsed() {
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Gauge(GaugeOperation::Set(12)),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Gauge(GaugeOperation::Set(12)),
+                )],
+                None,
+            ),
             parse_protocol("abc|g|12")
         );
 
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Gauge(GaugeOperation::Set(-12)),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Gauge(GaugeOperation::Set(-12)),
+                )],
+                None,
+            ),
             parse_protocol("abc|g|-12")
         );
 
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Gauge(GaugeOperation::Modify(12)),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Gauge(GaugeOperation::Modify(12)),
+                )],
+                None,
+            ),
             parse_protocol("abc|g|+=12")
         );
 
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Gauge(GaugeOperation::Modify(-12)),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Gauge(GaugeOperation::Modify(-12)),
+                )],
+                None,
+            ),
             parse_protocol("abc|g|-=12")
         );
 
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Gauge(GaugeOperation::Remove),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Gauge(GaugeOperation::Remove),
+                )],
+                None,
+            ),
             parse_protocol("abc|g|x")
         );
     }
 
     #[test]
     fn gauge_with_very_big_number_is_not_parsed_but_does_not_crash_program() {
-        assert!(parse_protocol(
+        assert_eq!(
+            (
+                vec![],
+                Some("abc|g|123456789123456789123456789123456789123456789123456789123456789123456789".into())
+            ),
+            parse_protocol(
             "abc|g|123456789123456789123456789123456789123456789123456789123456789123456789"
         )
-        .is_empty());
+        );
 
-        assert!(parse_protocol(
+        assert_eq!(
+            (
+                vec!{},
+                Some("abc|g|+=123456789123456789123456789123456789123456789123456789123456789123456789".into())
+                ),
+            parse_protocol(
             "abc|g|+=123456789123456789123456789123456789123456789123456789123456789123456789"
         )
-        .is_empty());
+        );
     }
 
     #[test]
     fn timer_can_be_parsed() {
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Timing(123, TimerResolution::MilliSeconds),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Timing(123, TimerResolution::MilliSeconds),
+                )],
+                None,
+            ),
             parse_protocol("abc|t|123")
         );
 
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Timing(123, TimerResolution::MilliSeconds),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Timing(123, TimerResolution::MilliSeconds),
+                )],
+                None,
+            ),
             parse_protocol("abc|t|123|ms")
         );
 
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Timing(123, TimerResolution::Seconds),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Timing(123, TimerResolution::Seconds),
+                )],
+                None,
+            ),
             parse_protocol("abc|t|123|s")
         );
 
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Timing(123, TimerResolution::MicroSeconds),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Timing(123, TimerResolution::MicroSeconds),
+                )],
+                None,
+            ),
             parse_protocol("abc|t|123|us")
         );
 
         assert_eq!(
-            vec![Metric::new(
-                Identifier::without_tags("abc".to_string()),
-                MetricKind::Timing(123, TimerResolution::NanoSeconds),
-            )],
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Timing(123, TimerResolution::NanoSeconds),
+                )],
+                None,
+            ),
             parse_protocol("abc|t|123|ns")
         );
     }
 
     #[test]
     fn timer_with_very_big_number_is_not_parsed_but_does_not_crash_program() {
-        assert!(parse_protocol(
+        assert_eq!(
+            (vec![], Some("abc|t|123456789123456789123456789123456789123456789123456789123456789123456789".into())),
+            parse_protocol(
             "abc|t|123456789123456789123456789123456789123456789123456789123456789123456789"
         )
-        .is_empty());
+        );
 
-        assert!(parse_protocol(
-            "abc|t|123456789123456789123456789123456789123456789123456789123456789123456789|s"
-        )
-        .is_empty());
+        assert_eq!(
+            (vec![], Some("abc|t|123456789123456789123456789123456789123456789123456789123456789123456789|s".into())),
+            parse_protocol(
+                "abc|t|123456789123456789123456789123456789123456789123456789123456789123456789|s"
+            )
+        );
 
-        assert!(parse_protocol("abc|t|18446744073709551616|ns").is_empty());
+        assert_eq!(
+            (vec![], Some("abc|t|18446744073709551616|ns".into())),
+            parse_protocol("abc|t|18446744073709551616|ns")
+        );
     }
 }
