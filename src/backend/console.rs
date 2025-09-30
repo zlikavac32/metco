@@ -13,7 +13,11 @@ impl Backend for Console {
             logger.info("Gauges:");
 
             time_frame.gauges().iter().for_each(|(identifier, value)| {
-                logger.info(&format!("  {} - {value}", identifier.name()))
+                logger.info(&format!(
+                    "  {} ({:?}) - {value}",
+                    identifier.name(),
+                    identifier.tags()
+                ))
             });
         }
 
@@ -24,7 +28,11 @@ impl Backend for Console {
                 .counters()
                 .iter()
                 .for_each(|(identifier, stats)| {
-                    logger.info(&format!("  {}", identifier.name()));
+                    logger.info(&format!(
+                        "  {} ({:?})",
+                        identifier.name(),
+                        identifier.tags()
+                    ));
                     logger.info(&format!("    count: {}", stats.count()));
                     logger.info(&format!("    sum: {}", stats.sum()));
                     logger.info(&format!("    std: {}", stats.std()));
@@ -46,7 +54,11 @@ impl Backend for Console {
             logger.info("Timings:");
 
             time_frame.timings().iter().for_each(|(identifier, stats)| {
-                logger.info(&format!("  {}", identifier.name()));
+                logger.info(&format!(
+                    "  {} ({:?})",
+                    identifier.name(),
+                    identifier.tags()
+                ));
                 logger.info(&format!("    count: {}", stats.count()));
                 logger.info(&format!("    sum: {}", stats.sum()));
                 logger.info(&format!("    std: {}", stats.std()));

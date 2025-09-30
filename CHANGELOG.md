@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Console backend prints tags [#17](https://github.com/zlikavac32/metco/pull/17)
+
 ## 0.5.0 - 2025-08-31
 
 ### Changed
