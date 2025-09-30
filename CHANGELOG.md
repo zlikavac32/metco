@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - Console backend prints tags [#17](https://github.com/zlikavac32/metco/pull/17)
 
+### Added
+
+- Not processed bytes are not tracked [#18](https://github.com/zlikavac32/metco/pull/18)
+
 ## 0.5.0 - 2025-08-31
 
 ### Changed
