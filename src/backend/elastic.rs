@@ -101,6 +101,10 @@ impl Backend for ElasticSearch {
                         format!("counter.{name}.p90"),
                         stats.percentile(90.into()).into(),
                     ),
+                    (
+                        format!("counter.{name}.p99"),
+                        stats.percentile(99.into()).into(),
+                    ),
                 ]);
 
                 if let Some(min) = stats.min() {
@@ -134,6 +138,10 @@ impl Backend for ElasticSearch {
                 (
                     format!("timing.{name}.p90"),
                     stats.percentile(90.into()).into(),
+                ),
+                (
+                    format!("timing.{name}.p99"),
+                    stats.percentile(99.into()).into(),
                 ),
             ]);
 

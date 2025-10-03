@@ -226,6 +226,14 @@ impl Backend for PostgreSQL {
                     stats.percentile(90.into()) as f64,
                     &logger,
                 );
+                self.insert(
+                    time,
+                    MetricKind::Counter,
+                    &format!("{name}.p99"),
+                    tags,
+                    stats.percentile(99.into()) as f64,
+                    &logger,
+                );
 
                 if let Some(min) = stats.min() {
                     self.insert(
@@ -302,6 +310,14 @@ impl Backend for PostgreSQL {
                 &format!("{name}.p90"),
                 tags,
                 stats.percentile(90.into()) as f64,
+                &logger,
+            );
+            self.insert(
+                time,
+                MetricKind::Timer,
+                &format!("{name}.p99"),
+                tags,
+                stats.percentile(99.into()) as f64,
                 &logger,
             );
 
