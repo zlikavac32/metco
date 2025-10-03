@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Percentile calculation [#19](https://github.com/zlikavac32/metco/pull/19)
+
 ## 0.6.0 - 2025-09-30
 
 ### Changed

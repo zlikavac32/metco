@@ -207,7 +207,7 @@ impl Backend for PostgreSQL {
                     MetricKind::Counter,
                     &format!("{name}.median"),
                     tags,
-                    stats.median(),
+                    stats.median() as f64,
                     &logger,
                 );
                 self.insert(
@@ -215,7 +215,7 @@ impl Backend for PostgreSQL {
                     MetricKind::Counter,
                     &format!("{name}.p75"),
                     tags,
-                    stats.percentile(0.75) as f64,
+                    stats.percentile(75.into()) as f64,
                     &logger,
                 );
                 self.insert(
@@ -223,7 +223,7 @@ impl Backend for PostgreSQL {
                     MetricKind::Counter,
                     &format!("{name}.p90"),
                     tags,
-                    stats.percentile(0.90) as f64,
+                    stats.percentile(90.into()) as f64,
                     &logger,
                 );
 
@@ -285,7 +285,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Timer,
                 &format!("{name}.median"),
                 tags,
-                stats.median(),
+                stats.median() as f64,
                 &logger,
             );
             self.insert(
@@ -293,7 +293,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Timer,
                 &format!("{name}.p75"),
                 tags,
-                stats.percentile(0.75) as f64,
+                stats.percentile(75.into()) as f64,
                 &logger,
             );
             self.insert(
@@ -301,7 +301,7 @@ impl Backend for PostgreSQL {
                 MetricKind::Timer,
                 &format!("{name}.p90"),
                 tags,
-                stats.percentile(0.90) as f64,
+                stats.percentile(90.into()) as f64,
                 &logger,
             );
 
