@@ -37,8 +37,8 @@ impl Backend for Console {
                     logger.info(&format!("    sum: {}", stats.sum()));
                     logger.info(&format!("    std: {}", stats.std()));
                     logger.info(&format!("    median: {}", stats.median()));
-                    logger.info(&format!("    p75: {}", stats.percentile(0.75)));
-                    logger.info(&format!("    p90: {}", stats.percentile(0.90)));
+                    logger.info(&format!("    p75: {}", stats.percentile(75.into())));
+                    logger.info(&format!("    p90: {}", stats.percentile(90.into())));
 
                     if let Some(min) = stats.min() {
                         logger.info(&format!("    min: {min}"));
@@ -63,8 +63,8 @@ impl Backend for Console {
                 logger.info(&format!("    sum: {}", stats.sum()));
                 logger.info(&format!("    std: {}", stats.std()));
                 logger.info(&format!("    median: {}", stats.median()));
-                logger.info(&format!("    p75: {}", stats.percentile(0.75)));
-                logger.info(&format!("    p90: {}", stats.percentile(0.90)));
+                logger.info(&format!("    p75: {}", stats.percentile(75.into())));
+                logger.info(&format!("    p90: {}", stats.percentile(90.into())));
 
                 if let Some(min) = stats.min() {
                     logger.info(&format!("    min: {min}"));

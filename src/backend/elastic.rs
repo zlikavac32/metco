@@ -93,8 +93,14 @@ impl Backend for ElasticSearch {
                     (format!("counter.{name}.sum"), stats.sum().into()),
                     (format!("counter.{name}.std"), stats.std().into()),
                     (format!("counter.{name}.median"), stats.median().into()),
-                    (format!("counter.{name}.p75"), stats.percentile(0.75).into()),
-                    (format!("counter.{name}.p90"), stats.percentile(0.90).into()),
+                    (
+                        format!("counter.{name}.p75"),
+                        stats.percentile(75.into()).into(),
+                    ),
+                    (
+                        format!("counter.{name}.p90"),
+                        stats.percentile(90.into()).into(),
+                    ),
                 ]);
 
                 if let Some(min) = stats.min() {
@@ -121,8 +127,14 @@ impl Backend for ElasticSearch {
                 (format!("timing.{name}.sum"), stats.sum().into()),
                 (format!("timing.{name}.std"), stats.std().into()),
                 (format!("timing.{name}.median"), stats.median().into()),
-                (format!("timing.{name}.p75"), stats.percentile(0.75).into()),
-                (format!("timing.{name}.p90"), stats.percentile(0.90).into()),
+                (
+                    format!("timing.{name}.p75"),
+                    stats.percentile(75.into()).into(),
+                ),
+                (
+                    format!("timing.{name}.p90"),
+                    stats.percentile(90.into()).into(),
+                ),
             ]);
 
             if let Some(min) = stats.min() {

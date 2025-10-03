@@ -86,6 +86,18 @@ impl Metric {
     }
 }
 
+pub struct Percentile(f64);
+
+impl From<u32> for Percentile {
+    fn from(value: u32) -> Self {
+        if value > 100 {
+            panic!("Value {} out of range [0, 100]", value);
+        }
+
+        Self(value as f64)
+    }
+}
+
 #[derive(Debug)]
 pub struct Statistics {
     list: Vec<u64>,
@@ -133,23 +145,16 @@ impl Statistics {
         self.list.last().copied()
     }
 
-    pub fn median(&self) -> f64 {
-        let len = self.list.len();
-
-        if len & 1 == 0 {
-            (self.list[len / 2 - 1] as f64 + self.list[len / 2] as f64) / 2.
-        } else {
-            self.list[len / 2] as f64
-        }
+    pub fn median(&self) -> u64 {
+        self.percentile(50.into())
     }
 
     pub fn std(&self) -> f64 {
         self.std
     }
 
-    pub fn percentile(&self, p: f64) -> u64 {
-        self.list
-            [((self.list.len() as f64 * p.clamp(0., 1.)).floor() as usize).min(self.list.len())]
+    pub fn percentile(&self, p: Percentile) -> u64 {
+        self.list[(self.list.len() as f64 * (p.0 / 100. - 0.01)).floor() as usize]
     }
 }
 
@@ -396,5 +401,32 @@ mod test {
         )));
 
         assert_eq!(HashMap::default(), registry.gauges);
+    }
+
+    #[test]
+    fn counter_statistics_are_correctly_calculated() {
+        let mut registry = Registry::default();
+
+        for i in 1..=100 {
+            registry.add(Metric::new(
+                Identifier::without_tags("test".into()),
+                MetricKind::Counter(i),
+            ));
+        }
+
+        let (metrics, overflowing_metrics) = registry.finalize().unwrap();
+
+        assert!(overflowing_metrics.is_empty());
+
+        let statistics = metrics
+            .counters
+            .get(&Identifier::without_tags("test".into()))
+            .expect("Metric `test` should exist");
+
+        assert_eq!(50, statistics.percentile(50.into()));
+        assert_eq!(99, statistics.percentile(99.into()));
+        assert_eq!(100, statistics.percentile(100.into()));
+        assert_eq!(50, statistics.median());
+        assert_eq!(5050, statistics.sum());
     }
 }
