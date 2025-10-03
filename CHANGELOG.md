@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- 99th percentile in supported backends [#20](https://github.com/zlikavac32/metco/pull/20)
+
 ### Fixed
 
 - Percentile calculation [#19](https://github.com/zlikavac32/metco/pull/19)
