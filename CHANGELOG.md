@@ -20,7 +20,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Not processed bytes are not tracked [#18](https://github.com/zlikavac32/metco/pull/18)
+- Not processed bytes are now tracked [#18](https://github.com/zlikavac32/metco/pull/18)
 
 ## 0.5.0 - 2025-08-31
 
