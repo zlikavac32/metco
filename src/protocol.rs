@@ -10,10 +10,16 @@ use nom::IResult;
 use std::collections::HashMap;
 
 fn parse_counter(input: &str) -> IResult<&str, MetricKind> {
-    let (input, _) = tag("c|")(input)?;
+    let (input, _) = tag("c")(input)?;
+
+    Ok((input, MetricKind::Counter))
+}
+
+fn parse_histogram(input: &str) -> IResult<&str, MetricKind> {
+    let (input, _) = tag("h|")(input)?;
 
     fn into_u64(input: &str) -> Result<MetricKind, std::num::ParseIntError> {
-        Ok(MetricKind::Counter(input.parse::<u64>()?))
+        Ok(MetricKind::Histogram(input.parse::<u64>()?))
     }
 
     map_res(digit1, into_u64)(input)
@@ -89,7 +95,7 @@ fn parse_gauge(input: &str) -> IResult<&str, MetricKind> {
 }
 
 fn parse_kind(input: &str) -> IResult<&str, MetricKind> {
-    alt((parse_counter, parse_timing, parse_gauge))(input)
+    alt((parse_counter, parse_histogram, parse_timing, parse_gauge))(input)
 }
 
 fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
@@ -200,11 +206,11 @@ mod test {
             (
                 vec![Metric::new(
                     Identifier::without_tags("abc".to_string()),
-                    MetricKind::Counter(12),
+                    MetricKind::Counter,
                 )],
                 None
             ),
-            parse_protocol("abc|c|12")
+            parse_protocol("abc|c")
         );
     }
 
@@ -214,20 +220,48 @@ mod test {
             (
                 vec![Metric::new(
                     Identifier::without_tags("a\\b|c;".to_string()),
-                    MetricKind::Counter(12),
+                    MetricKind::Counter,
                 )],
                 None,
             ),
-            parse_protocol("a\\\\b\\|c\\;|c|12")
+            parse_protocol("a\\\\b\\|c\\;|c")
         );
     }
 
     #[test]
-    fn counter_with_very_big_number_is_not_parsed_but_does_not_crash_program() {
+    fn histogram_can_be_parsed() {
         assert_eq!(
-            (vec![], Some("abc|c|123456789123456789123456789123456789123456789123456789123456789123456789".into())),
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc".to_string()),
+                    MetricKind::Histogram(12),
+                )],
+                None
+            ),
+            parse_protocol("abc|h|12")
+        );
+    }
+
+    #[test]
+    fn histogram_with_escaped_chars_can_be_parsed() {
+        assert_eq!(
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("a\\b|c;".to_string()),
+                    MetricKind::Histogram(12),
+                )],
+                None,
+            ),
+            parse_protocol("a\\\\b\\|c\\;|h|12")
+        );
+    }
+
+    #[test]
+    fn histogram_with_very_big_number_is_not_parsed_but_does_not_crash_program() {
+        assert_eq!(
+            (vec![], Some("abc|h|123456789123456789123456789123456789123456789123456789123456789123456789".into())),
             parse_protocol(
-            "abc|c|123456789123456789123456789123456789123456789123456789123456789123456789"
+            "abc|h|123456789123456789123456789123456789123456789123456789123456789123456789"
         )
         );
     }

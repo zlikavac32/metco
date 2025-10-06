@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+## Added
+
+- Histogram metric is added and regular counter no longer has an input value [#22](https://github.com/zlikavac32/metco/pull/22)
+
 ## 0.7.0 - 2025-10-03
 
 ### Added

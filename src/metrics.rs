@@ -19,7 +19,8 @@ pub enum GaugeOperation {
 
 #[derive(Debug, PartialEq)]
 pub enum MetricKind {
-    Counter(u64),
+    Counter,
+    Histogram(u64),
     Timing(u64, TimerResolution),
     Gauge(GaugeOperation),
 }
@@ -74,7 +75,11 @@ impl Metric {
     }
 
     pub fn is_counter(&self) -> bool {
-        matches!(self.kind, MetricKind::Counter(_))
+        matches!(self.kind, MetricKind::Counter)
+    }
+
+    pub fn is_histogram(&self) -> bool {
+        matches!(self.kind, MetricKind::Histogram(_))
     }
 
     pub fn is_timer(&self) -> bool {
@@ -166,14 +171,19 @@ impl Statistics {
 
 #[derive(Debug)]
 pub struct TimeFrame {
-    counters: HashMap<Identifier, Statistics>,
+    counters: HashMap<Identifier, u64>,
+    histograms: HashMap<Identifier, Statistics>,
     gauges: HashMap<Identifier, i64>,
     timings: HashMap<Identifier, Statistics>,
 }
 
 impl TimeFrame {
-    pub fn counters(&self) -> &HashMap<Identifier, Statistics> {
+    pub fn counters(&self) -> &HashMap<Identifier, u64> {
         &self.counters
+    }
+
+    pub fn histograms(&self) -> &HashMap<Identifier, Statistics> {
+        &self.histograms
     }
 
     pub fn gauges(&self) -> &HashMap<Identifier, i64> {
@@ -212,7 +222,8 @@ impl Display for OverflowingMetric {
 
 #[derive(Debug, Default)]
 pub struct Registry {
-    counters: HashMap<Identifier, Vec<u64>>,
+    counters: HashMap<Identifier, u64>,
+    counters_with_histogram: HashMap<Identifier, Vec<u64>>,
     gauges: HashMap<Identifier, i64>,
     timings: HashMap<Identifier, Vec<u64>>,
 }
@@ -226,8 +237,9 @@ impl Registry {
 impl Registry {
     pub fn add(&mut self, metric: Metric) -> bool {
         match metric.kind {
-            MetricKind::Counter(value) => self
-                .counters
+            MetricKind::Counter => *self.counters.entry(metric.identifier).or_default() += 1,
+            MetricKind::Histogram(value) => self
+                .counters_with_histogram
                 .entry(metric.identifier)
                 .or_default()
                 .push(value),
@@ -277,7 +289,8 @@ impl Registry {
 
         let time_frame = TimeFrame {
             gauges: self.gauges,
-            counters: self.counters.into_iter().fold(
+            counters: self.counters,
+            histograms: self.counters_with_histogram.into_iter().fold(
                 HashMap::default(),
                 |mut map, (identifier, list)| {
                     if let Ok(statistics) = Statistics::new(list) {
@@ -322,18 +335,18 @@ mod test {
 
         assert!(registry.add(Metric::new(
             Identifier::without_tags("test".into()),
-            MetricKind::Counter(2)
+            MetricKind::Histogram(2)
         )));
         assert!(registry.add(Metric::new(
             Identifier::without_tags("demo".into()),
-            MetricKind::Counter(32)
+            MetricKind::Histogram(32)
         )));
         assert!(registry.add(Metric::new(
             Identifier::without_tags("test".into()),
-            MetricKind::Counter(7)
+            MetricKind::Histogram(7)
         )));
 
-        assert_eq!(map, registry.counters)
+        assert_eq!(map, registry.counters_with_histogram)
     }
 
     #[test]
@@ -416,7 +429,7 @@ mod test {
         for i in 1..=100 {
             registry.add(Metric::new(
                 Identifier::without_tags("test".into()),
-                MetricKind::Counter(i),
+                MetricKind::Histogram(i),
             ));
         }
 
@@ -425,7 +438,7 @@ mod test {
         assert!(overflowing_metrics.is_empty());
 
         let statistics = metrics
-            .counters
+            .histograms
             .get(&Identifier::without_tags("test".into()))
             .expect("Metric `test` should exist");
 

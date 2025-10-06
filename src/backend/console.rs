@@ -27,6 +27,21 @@ impl Backend for Console {
             time_frame
                 .counters()
                 .iter()
+                .for_each(|(identifier, value)| {
+                    logger.info(&format!(
+                        "  {} ({:?}) - {value}",
+                        identifier.name(),
+                        identifier.tags()
+                    ))
+                });
+        }
+
+        if !time_frame.histograms().is_empty() {
+            logger.info("Histograms:");
+
+            time_frame
+                .histograms()
+                .iter()
                 .for_each(|(identifier, stats)| {
                     logger.info(&format!(
                         "  {} ({:?})",

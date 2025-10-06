@@ -294,7 +294,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         "metco.bytes_read".into(),
                         HashMap::from([("host".into(), host.clone())]),
                     ),
-                    MetricKind::Counter(size_read as u64),
+                    MetricKind::Histogram(size_read as u64),
                 ));
 
                 let payload = match std::str::from_utf8(&buff[..size_read]) {
@@ -310,6 +310,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let (metrics, rest) = protocol::parse_protocol(payload);
 
                 let mut counters_count = 0;
+                let mut histograms_count = 0;
                 let mut timers_count = 0;
                 let mut gauges_count = 0;
 
@@ -318,6 +319,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     if metric.is_counter() {
                         counters_count += 1;
+                    } else if metric.is_histogram() {
+                        histograms_count += 1;
                     } else if metric.is_timer() {
                         timers_count += 1;
                     } else if metric.is_gauge() {
@@ -337,7 +340,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             "metco.bytes_not_parsed".into(),
                             HashMap::from([("host".into(), host.clone())]),
                         ),
-                        MetricKind::Counter(rest.len() as u64),
+                        MetricKind::Histogram(rest.len() as u64),
                     ));
                 }
 
@@ -350,7 +353,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 ("kind".into(), "counter".into()),
                             ]),
                         ),
-                        MetricKind::Counter(counters_count),
+                        MetricKind::Histogram(counters_count),
+                    ));
+                }
+
+                if histograms_count > 0 {
+                    telemetry.add(Metric::new(
+                        Identifier::with_tags(
+                            "metco.metrics_parsed".into(),
+                            HashMap::from([
+                                ("host".into(), host.clone()),
+                                ("kind".into(), "histogram".into()),
+                            ]),
+                        ),
+                        MetricKind::Histogram(counters_count),
                     ));
                 }
 
@@ -363,7 +379,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 ("kind".into(), "timer".into()),
                             ]),
                         ),
-                        MetricKind::Counter(timers_count),
+                        MetricKind::Histogram(timers_count),
                     ));
                 }
 
@@ -376,7 +392,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 ("kind".into(), "gauge".into()),
                             ]),
                         ),
-                        MetricKind::Counter(gauges_count),
+                        MetricKind::Histogram(gauges_count),
                     ));
                 }
 

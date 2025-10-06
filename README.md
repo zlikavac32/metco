@@ -27,7 +27,7 @@ Each metric can have associated tags that are used to fine tune aggregations. Ta
 
 Assigning two tags to a metric would look like `name;tag1=value1;tag2=value2`.
 
-Type can be any of `c`, `t` or `g`.
+Type can be any of `c`, `h`, `t` or `g`.
 
 Value format and optional additional fields are defined by the metric type.
 
@@ -35,10 +35,18 @@ Multiple metrics can be sent separated by `\n`. Data parsed before a parsing err
 
 ### Counters
 
-Value is always a positive natural number.
+Value is always assumed to be one. This is just a simple counter.
 
 ```
 abc|c|1234
+```
+
+### Histograms
+
+Value is always a positive natural number. Unlike `counter`, this type can have arbitrary positive value associated with it and statistics are calculated for it.
+
+```
+abc|h|1234
 ```
 
 ### Timers
