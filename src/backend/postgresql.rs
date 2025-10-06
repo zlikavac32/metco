@@ -20,6 +20,17 @@ create table metric_counters
 create index index_metric_counters on metric_counters (name, time desc);
 create index index_metric_counters_tags on metric_counters using gin (name, tags, time);
 
+create table metric_histograms
+(
+    name  text        not null,
+    time  timestamptz not null,
+    value float8      not null,
+    tags  jsonb       not null
+);
+
+create index index_metric_histograms on metric_histograms (name, time desc);
+create index index_metric_histograms_tags on metric_histograms using gin (name, tags, time);
+
 create table metric_timers
 (
     name  text        not null,
@@ -63,6 +74,23 @@ create table metric_counters
 
 create index index_metric_counters on metric_counters (name, time desc);
 create index index_metric_counters_tags on metric_counters using gin (name, tags, time);
+
+create table metric_histograms
+(
+    name  text        not null,
+    time  timestamptz not null,
+    value float8      not null,
+    tags  jsonb       not null
+)
+    with (
+        timescaledb.hypertable,
+        timescaledb.partition_column = 'time',
+        timescaledb.segmentby = 'name',
+        timescaledb.create_default_indexes = false
+        );
+
+create index index_metric_histograms on metric_histograms (name, time desc);
+create index index_metric_histograms_tags on metric_histograms using gin (name, tags, time);
 
 create table metric_timers
 (
@@ -113,6 +141,7 @@ impl Debug for PostgreSQL {
 enum MetricKind {
     Gauge,
     Counter,
+    Histogram,
     Timer,
 }
 
@@ -133,6 +162,7 @@ impl PostgreSQL {
         let table_name = match metric_kind {
             MetricKind::Gauge => "metric_gauges",
             MetricKind::Counter => "metric_counters",
+            MetricKind::Histogram => "metric_Histograms",
             MetricKind::Timer => "metric_timers",
         };
 
@@ -174,13 +204,33 @@ impl Backend for PostgreSQL {
         time_frame
             .counters()
             .iter()
+            .for_each(|(identifier, value)| {
+                self.insert(
+                    time,
+                    MetricKind::Counter,
+                    identifier.name(),
+                    identifier.tags(),
+                    *value as f64,
+                    &logger,
+                );
+
+                logger.debug(&format!(
+                    "Processed counter {} with tags {:?}",
+                    identifier.name(),
+                    identifier.tags()
+                ));
+            });
+
+        time_frame
+            .histograms()
+            .iter()
             .for_each(|(identifier, stats)| {
                 let name = identifier.name();
                 let tags = identifier.tags();
 
                 self.insert(
                     time,
-                    MetricKind::Counter,
+                    MetricKind::Histogram,
                     &format!("{name}.count"),
                     tags,
                     stats.count() as f64,
@@ -188,7 +238,7 @@ impl Backend for PostgreSQL {
                 );
                 self.insert(
                     time,
-                    MetricKind::Counter,
+                    MetricKind::Histogram,
                     &format!("{name}.sum"),
                     tags,
                     stats.sum() as f64,
@@ -196,7 +246,7 @@ impl Backend for PostgreSQL {
                 );
                 self.insert(
                     time,
-                    MetricKind::Counter,
+                    MetricKind::Histogram,
                     &format!("{name}.std"),
                     tags,
                     stats.std(),
@@ -204,7 +254,7 @@ impl Backend for PostgreSQL {
                 );
                 self.insert(
                     time,
-                    MetricKind::Counter,
+                    MetricKind::Histogram,
                     &format!("{name}.median"),
                     tags,
                     stats.median() as f64,
@@ -212,7 +262,7 @@ impl Backend for PostgreSQL {
                 );
                 self.insert(
                     time,
-                    MetricKind::Counter,
+                    MetricKind::Histogram,
                     &format!("{name}.p75"),
                     tags,
                     stats.percentile(75.into()) as f64,
@@ -220,7 +270,7 @@ impl Backend for PostgreSQL {
                 );
                 self.insert(
                     time,
-                    MetricKind::Counter,
+                    MetricKind::Histogram,
                     &format!("{name}.p90"),
                     tags,
                     stats.percentile(90.into()) as f64,
@@ -228,7 +278,7 @@ impl Backend for PostgreSQL {
                 );
                 self.insert(
                     time,
-                    MetricKind::Counter,
+                    MetricKind::Histogram,
                     &format!("{name}.p99"),
                     tags,
                     stats.percentile(99.into()) as f64,
@@ -236,7 +286,7 @@ impl Backend for PostgreSQL {
                 );
                 self.insert(
                     time,
-                    MetricKind::Counter,
+                    MetricKind::Histogram,
                     &format!("{name}.min"),
                     tags,
                     stats.min() as f64,
@@ -244,14 +294,14 @@ impl Backend for PostgreSQL {
                 );
                 self.insert(
                     time,
-                    MetricKind::Counter,
+                    MetricKind::Histogram,
                     &format!("{name}.max"),
                     tags,
                     stats.max() as f64,
                     &logger,
                 );
 
-                logger.debug(&format!("Processed counter {name} with tags {tags:?}"));
+                logger.debug(&format!("Processed histogram {name} with tags {tags:?}"));
             });
 
         time_frame.timings().iter().for_each(|(identifier, stats)| {

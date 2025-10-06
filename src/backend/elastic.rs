@@ -85,34 +85,52 @@ impl Backend for ElasticSearch {
         time_frame
             .counters()
             .iter()
+            .for_each(|(identifier, value)| {
+                self.insert(
+                    time,
+                    HashMap::from([(format!("counter.{}", identifier.name()), (*value).into())]),
+                    identifier.tags(),
+                    &logger,
+                );
+
+                logger.debug(&format!(
+                    "Processed counter {} with tags {:?}",
+                    identifier.name(),
+                    identifier.tags()
+                ));
+            });
+
+        time_frame
+            .histograms()
+            .iter()
             .for_each(|(identifier, stats)| {
                 let name = identifier.name();
 
                 let map = HashMap::from([
-                    (format!("counter.{name}.count"), stats.count().into()),
-                    (format!("counter.{name}.sum"), stats.sum().into()),
-                    (format!("counter.{name}.std"), stats.std().into()),
-                    (format!("counter.{name}.median"), stats.median().into()),
+                    (format!("histogram.{name}.count"), stats.count().into()),
+                    (format!("histogram.{name}.sum"), stats.sum().into()),
+                    (format!("histogram.{name}.std"), stats.std().into()),
+                    (format!("histogram.{name}.median"), stats.median().into()),
                     (
-                        format!("counter.{name}.p75"),
+                        format!("histogram.{name}.p75"),
                         stats.percentile(75.into()).into(),
                     ),
                     (
-                        format!("counter.{name}.p90"),
+                        format!("histogram.{name}.p90"),
                         stats.percentile(90.into()).into(),
                     ),
                     (
-                        format!("counter.{name}.p99"),
+                        format!("histogram.{name}.p99"),
                         stats.percentile(99.into()).into(),
                     ),
-                    (format!("counter.{name}.min"), stats.min().into()),
-                    (format!("counter.{name}.max"), stats.max().into()),
+                    (format!("histogram.{name}.min"), stats.min().into()),
+                    (format!("histogram.{name}.max"), stats.max().into()),
                 ]);
 
                 self.insert(time, map, identifier.tags(), &logger);
 
                 logger.debug(&format!(
-                    "Processed counter {name} with tags {:?}",
+                    "Processed histogram {name} with tags {:?}",
                     identifier.tags()
                 ));
             });
