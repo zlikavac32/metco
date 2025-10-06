@@ -40,14 +40,8 @@ impl Backend for Console {
                     logger.info(&format!("    p75: {}", stats.percentile(75.into())));
                     logger.info(&format!("    p90: {}", stats.percentile(90.into())));
                     logger.info(&format!("    p99: {}", stats.percentile(99.into())));
-
-                    if let Some(min) = stats.min() {
-                        logger.info(&format!("    min: {min}"));
-                    }
-
-                    if let Some(max) = stats.max() {
-                        logger.info(&format!("    max: {max}"));
-                    }
+                    logger.info(&format!("    min: {}", stats.min()));
+                    logger.info(&format!("    max: {}", stats.max()));
                 });
         }
 
@@ -67,14 +61,8 @@ impl Backend for Console {
                 logger.info(&format!("    p75: {}", stats.percentile(75.into())));
                 logger.info(&format!("    p90: {}", stats.percentile(90.into())));
                 logger.info(&format!("    p99: {}", stats.percentile(99.into())));
-
-                if let Some(min) = stats.min() {
-                    logger.info(&format!("    min: {min}"));
-                }
-
-                if let Some(max) = stats.max() {
-                    logger.info(&format!("    max: {max}"));
-                }
+                logger.info(&format!("    min: {}", stats.min()));
+                logger.info(&format!("    max: {}", stats.max()));
             });
         }
     }

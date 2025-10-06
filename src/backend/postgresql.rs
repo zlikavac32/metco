@@ -234,28 +234,22 @@ impl Backend for PostgreSQL {
                     stats.percentile(99.into()) as f64,
                     &logger,
                 );
-
-                if let Some(min) = stats.min() {
-                    self.insert(
-                        time,
-                        MetricKind::Counter,
-                        &format!("{name}.min"),
-                        tags,
-                        min as f64,
-                        &logger,
-                    );
-                }
-
-                if let Some(max) = stats.max() {
-                    self.insert(
-                        time,
-                        MetricKind::Counter,
-                        &format!("{name}.max"),
-                        tags,
-                        max as f64,
-                        &logger,
-                    );
-                }
+                self.insert(
+                    time,
+                    MetricKind::Counter,
+                    &format!("{name}.min"),
+                    tags,
+                    stats.min() as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Counter,
+                    &format!("{name}.max"),
+                    tags,
+                    stats.max() as f64,
+                    &logger,
+                );
 
                 logger.debug(&format!("Processed counter {name} with tags {tags:?}"));
             });
@@ -320,28 +314,22 @@ impl Backend for PostgreSQL {
                 stats.percentile(99.into()) as f64,
                 &logger,
             );
-
-            if let Some(min) = stats.min() {
-                self.insert(
-                    time,
-                    MetricKind::Timer,
-                    &format!("{name}.min"),
-                    tags,
-                    min as f64,
-                    &logger,
-                );
-            }
-
-            if let Some(max) = stats.max() {
-                self.insert(
-                    time,
-                    MetricKind::Timer,
-                    &format!("{name}.max"),
-                    tags,
-                    max as f64,
-                    &logger,
-                );
-            }
+            self.insert(
+                time,
+                MetricKind::Timer,
+                &format!("{name}.min"),
+                tags,
+                stats.min() as f64,
+                &logger,
+            );
+            self.insert(
+                time,
+                MetricKind::Timer,
+                &format!("{name}.max"),
+                tags,
+                stats.max() as f64,
+                &logger,
+            );
 
             logger.debug(&format!("Processed timing {name} with tags {tags:?}"));
         });
