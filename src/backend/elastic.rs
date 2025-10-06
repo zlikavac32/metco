@@ -88,7 +88,7 @@ impl Backend for ElasticSearch {
             .for_each(|(identifier, stats)| {
                 let name = identifier.name();
 
-                let mut map = HashMap::from([
+                let map = HashMap::from([
                     (format!("counter.{name}.count"), stats.count().into()),
                     (format!("counter.{name}.sum"), stats.sum().into()),
                     (format!("counter.{name}.std"), stats.std().into()),
@@ -105,15 +105,9 @@ impl Backend for ElasticSearch {
                         format!("counter.{name}.p99"),
                         stats.percentile(99.into()).into(),
                     ),
+                    (format!("counter.{name}.min"), stats.min().into()),
+                    (format!("counter.{name}.max"), stats.max().into()),
                 ]);
-
-                if let Some(min) = stats.min() {
-                    map.insert(format!("counter.{name}.min"), min.into());
-                }
-
-                if let Some(max) = stats.max() {
-                    map.insert(format!("counter.{name}.max"), max.into());
-                }
 
                 self.insert(time, map, identifier.tags(), &logger);
 
@@ -126,7 +120,7 @@ impl Backend for ElasticSearch {
         time_frame.timings().iter().for_each(|(identifier, stats)| {
             let name = identifier.name();
 
-            let mut map = HashMap::from([
+            let map = HashMap::from([
                 (format!("timing.{name}.count"), stats.count().into()),
                 (format!("timing.{name}.sum"), stats.sum().into()),
                 (format!("timing.{name}.std"), stats.std().into()),
@@ -143,15 +137,9 @@ impl Backend for ElasticSearch {
                     format!("timing.{name}.p99"),
                     stats.percentile(99.into()).into(),
                 ),
+                (format!("counter.{name}.min"), stats.min().into()),
+                (format!("counter.{name}.max"), stats.max().into()),
             ]);
-
-            if let Some(min) = stats.min() {
-                map.insert(format!("timing.{name}.min"), min.into());
-            }
-
-            if let Some(max) = stats.max() {
-                map.insert(format!("timing.{name}.max"), max.into());
-            }
 
             self.insert(time, map, identifier.tags(), &logger);
 

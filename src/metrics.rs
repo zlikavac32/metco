@@ -137,12 +137,18 @@ impl Statistics {
         self.list.len()
     }
 
-    pub fn min(&self) -> Option<u64> {
-        self.list.first().copied()
+    pub fn min(&self) -> u64 {
+        *self
+            .list
+            .first()
+            .expect("We asserted that list is not empty")
     }
 
-    pub fn max(&self) -> Option<u64> {
-        self.list.last().copied()
+    pub fn max(&self) -> u64 {
+        *self
+            .list
+            .last()
+            .expect("We asserted that list is not empty")
     }
 
     pub fn median(&self) -> u64 {
