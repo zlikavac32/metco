@@ -12,13 +12,26 @@ impl Backend for Console {
         if !time_frame.gauges().is_empty() {
             logger.info("Gauges:");
 
-            time_frame.gauges().iter().for_each(|(identifier, value)| {
-                logger.info(&format!(
-                    "  {} ({:?}) - {value}",
-                    identifier.name(),
-                    identifier.tags()
-                ))
-            });
+            time_frame
+                .gauges()
+                .iter()
+                .for_each(|(identifier, (current, stats))| {
+                    logger.info(&format!(
+                        "  {} ({:?})",
+                        identifier.name(),
+                        identifier.tags()
+                    ));
+                    logger.info(&format!("    current: {}", current));
+                    logger.info(&format!("    count: {}", stats.count()));
+                    logger.info(&format!("    sum: {}", stats.sum()));
+                    logger.info(&format!("    std: {}", stats.std()));
+                    logger.info(&format!("    median: {}", stats.median()));
+                    logger.info(&format!("    p75: {}", stats.percentile(75.into())));
+                    logger.info(&format!("    p90: {}", stats.percentile(90.into())));
+                    logger.info(&format!("    p99: {}", stats.percentile(99.into())));
+                    logger.info(&format!("    min: {}", stats.min()));
+                    logger.info(&format!("    max: {}", stats.max()));
+                });
         }
 
         if !time_frame.counters().is_empty() {

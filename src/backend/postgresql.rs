@@ -184,22 +184,96 @@ values ($1, $2, $3, $4)
 
 impl Backend for PostgreSQL {
     fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame, logger: Logger) {
-        time_frame.gauges().iter().for_each(|(identifier, value)| {
-            self.insert(
-                time,
-                MetricKind::Gauge,
-                identifier.name(),
-                identifier.tags(),
-                *value as f64,
-                &logger,
-            );
+        time_frame
+            .gauges()
+            .iter()
+            .for_each(|(identifier, (current, stats))| {
+                let name = identifier.name();
+                let tags = identifier.tags();
 
-            logger.debug(&format!(
-                "Processed gauge {} with tags {:?}",
-                identifier.name(),
-                identifier.tags()
-            ));
-        });
+                self.insert(
+                    time,
+                    MetricKind::Gauge,
+                    &format!("{name}.current"),
+                    tags,
+                    (*current) as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Gauge,
+                    &format!("{name}.count"),
+                    tags,
+                    stats.count() as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Gauge,
+                    &format!("{name}.sum"),
+                    tags,
+                    stats.sum() as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Gauge,
+                    &format!("{name}.std"),
+                    tags,
+                    stats.std(),
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Gauge,
+                    &format!("{name}.median"),
+                    tags,
+                    stats.median() as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Gauge,
+                    &format!("{name}.p75"),
+                    tags,
+                    stats.percentile(75.into()) as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Gauge,
+                    &format!("{name}.p90"),
+                    tags,
+                    stats.percentile(90.into()) as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Gauge,
+                    &format!("{name}.p99"),
+                    tags,
+                    stats.percentile(99.into()) as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Gauge,
+                    &format!("{name}.min"),
+                    tags,
+                    stats.min() as f64,
+                    &logger,
+                );
+                self.insert(
+                    time,
+                    MetricKind::Gauge,
+                    &format!("{name}.max"),
+                    tags,
+                    stats.max() as f64,
+                    &logger,
+                );
+
+                logger.debug(&format!("Processed gauge {name} with tags {tags:?}"));
+            });
 
         time_frame
             .counters()
