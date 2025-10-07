@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
@@ -226,6 +226,7 @@ pub struct Registry {
     counters_with_histogram: HashMap<Identifier, Vec<u64>>,
     gauges: HashMap<Identifier, i64>,
     timings: HashMap<Identifier, Vec<u64>>,
+    removed_gauges: HashSet<Identifier>,
 }
 
 impl Registry {
@@ -258,9 +259,15 @@ impl Registry {
             }
             MetricKind::Gauge(operation) => match operation {
                 GaugeOperation::Set(value) => {
+                    self.removed_gauges.remove(&metric.identifier);
                     self.gauges.insert(metric.identifier, value);
                 }
                 GaugeOperation::Modify(value) => {
+                    if self.removed_gauges.contains(&metric.identifier) {
+                        self.removed_gauges.remove(&metric.identifier);
+                        self.gauges.remove(&metric.identifier);
+                    }
+
                     let val = self.gauges.entry(metric.identifier).or_default();
 
                     match val.checked_add(value) {
@@ -269,7 +276,7 @@ impl Registry {
                     }
                 }
                 GaugeOperation::Remove => {
-                    self.gauges.remove(&metric.identifier);
+                    self.removed_gauges.insert(metric.identifier);
                 }
             },
         }
@@ -278,8 +285,14 @@ impl Registry {
     }
 
     pub fn new_with_gauges(&self) -> Self {
+        let mut gauges = self.gauges.clone();
+
+        for gauge in self.removed_gauges.iter() {
+            gauges.remove(gauge);
+        }
+
         Self {
-            gauges: self.gauges.clone(),
+            gauges,
             ..Default::default()
         }
     }
@@ -322,7 +335,6 @@ impl Registry {
 
 #[cfg(test)]
 mod test {
-
     use super::*;
 
     #[test]
@@ -419,7 +431,11 @@ mod test {
             MetricKind::Gauge(GaugeOperation::Remove)
         )));
 
-        assert_eq!(HashMap::default(), registry.gauges);
+        assert_eq!(
+            HashSet::from([Identifier::without_tags("test".into())]),
+            registry.removed_gauges
+        );
+        assert_eq!(map, registry.gauges);
     }
 
     #[test]
@@ -447,5 +463,43 @@ mod test {
         assert_eq!(100, statistics.percentile(100.into()));
         assert_eq!(50, statistics.median());
         assert_eq!(5050, statistics.sum());
+    }
+
+    #[test]
+    fn gauge_manipulation_is_correct() {
+        let mut registry = Registry::default();
+        let identifier = Identifier::without_tags("test".into());
+
+        registry.add(Metric::new(
+            identifier.clone(),
+            MetricKind::Gauge(GaugeOperation::Modify(1234)),
+        ));
+
+        let mut registry = {
+            let cloned = registry.new_with_gauges();
+
+            let statistics = registry.finalize().unwrap().0;
+
+            assert_eq!(&1234, statistics.gauges.get(&identifier).unwrap());
+
+            cloned
+        };
+
+        registry.add(Metric::new(
+            identifier.clone(),
+            MetricKind::Gauge(GaugeOperation::Remove),
+        ));
+
+        let registry = {
+            let cloned = registry.new_with_gauges();
+
+            let statistics = registry.finalize().unwrap().0;
+
+            assert_eq!(&1234, statistics.gauges.get(&identifier).unwrap());
+
+            cloned
+        };
+
+        assert_eq!(HashMap::default(), registry.gauges);
     }
 }
