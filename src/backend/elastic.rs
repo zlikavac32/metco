@@ -67,20 +67,41 @@ impl ElasticSearch {
 
 impl Backend for ElasticSearch {
     fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame, logger: Logger) {
-        time_frame.gauges().iter().for_each(|(identifier, value)| {
-            self.insert(
-                time,
-                HashMap::from([(format!("gauge.{}", identifier.name()), (*value).into())]),
-                identifier.tags(),
-                &logger,
-            );
+        time_frame
+            .gauges()
+            .iter()
+            .for_each(|(identifier, (current, stats))| {
+                let name = identifier.name();
 
-            logger.debug(&format!(
-                "Processed gauge {} with tags {:?}",
-                identifier.name(),
-                identifier.tags()
-            ));
-        });
+                let map = HashMap::from([
+                    (format!("gauge.{name}.current"), (*current).into()),
+                    (format!("gauge.{name}.count"), stats.count().into()),
+                    (format!("gauge.{name}.sum"), stats.sum().into()),
+                    (format!("gauge.{name}.std"), stats.std().into()),
+                    (format!("gauge.{name}.median"), stats.median().into()),
+                    (
+                        format!("gauge.{name}.p75"),
+                        stats.percentile(75.into()).into(),
+                    ),
+                    (
+                        format!("gauge.{name}.p90"),
+                        stats.percentile(90.into()).into(),
+                    ),
+                    (
+                        format!("gauge.{name}.p99"),
+                        stats.percentile(99.into()).into(),
+                    ),
+                    (format!("gauge.{name}.min"), stats.min().into()),
+                    (format!("gauge.{name}.max"), stats.max().into()),
+                ]);
+
+                self.insert(time, map, identifier.tags(), &logger);
+
+                logger.debug(&format!(
+                    "Processed gauge {name} with tags {:?}",
+                    identifier.tags()
+                ));
+            });
 
         time_frame
             .counters()

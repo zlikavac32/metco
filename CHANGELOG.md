@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ## Changed
 
 - Removed gauge is persisted until new cycle [#23](https://github.com/zlikavac32/metco/pull/23)
+- Backends send full statistics for gauge [#24](https://github.com/zlikavac32/metco/pull/24)
 
 ## 0.7.0 - 2025-10-03
 
