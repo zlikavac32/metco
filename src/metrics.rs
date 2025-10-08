@@ -19,7 +19,7 @@ pub enum GaugeOperation {
 
 #[derive(Debug, PartialEq)]
 pub enum MetricKind {
-    Counter,
+    Counter(u64),
     Histogram(u64),
     Timing(u64, TimerResolution),
     Gauge(GaugeOperation),
@@ -75,7 +75,7 @@ impl Metric {
     }
 
     pub fn is_counter(&self) -> bool {
-        matches!(self.kind, MetricKind::Counter)
+        matches!(self.kind, MetricKind::Counter(_))
     }
 
     pub fn is_histogram(&self) -> bool {
@@ -238,7 +238,9 @@ impl Registry {
 impl Registry {
     pub fn add(&mut self, metric: Metric) -> bool {
         match metric.kind {
-            MetricKind::Counter => *self.counters.entry(metric.identifier).or_default() += 1,
+            MetricKind::Counter(value) => {
+                *self.counters.entry(metric.identifier).or_default() += value as i64
+            }
             MetricKind::Histogram(value) => self
                 .counters_with_histogram
                 .entry(metric.identifier)

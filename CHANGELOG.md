@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+## Changed
+
+- Counter no longer assumes value of 1 [#25](https://github.com/zlikavac32/metco/pull/25)
+
 ## 0.8.0 - 2025-10-07
 
 ## Added
