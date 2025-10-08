@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ## Changed
 
 - Counter no longer assumes value of 1 [#25](https://github.com/zlikavac32/metco/pull/25)
+- Metco memory usage is now sent as `counter` [#26](https://github.com/zlikavac32/metco/pull/26)
 
 ## 0.8.0 - 2025-10-07
 
