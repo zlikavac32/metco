@@ -10,9 +10,13 @@ use nom::IResult;
 use std::collections::HashMap;
 
 fn parse_counter(input: &str) -> IResult<&str, MetricKind> {
-    let (input, _) = tag("c")(input)?;
+    let (input, _) = tag("c|")(input)?;
 
-    Ok((input, MetricKind::Counter))
+    fn into_u64(input: &str) -> Result<MetricKind, std::num::ParseIntError> {
+        Ok(MetricKind::Counter(input.parse::<u64>()?))
+    }
+
+    map_res(digit1, into_u64)(input)
 }
 
 fn parse_histogram(input: &str) -> IResult<&str, MetricKind> {
@@ -206,11 +210,11 @@ mod test {
             (
                 vec![Metric::new(
                     Identifier::without_tags("abc".to_string()),
-                    MetricKind::Counter,
+                    MetricKind::Counter(12),
                 )],
                 None
             ),
-            parse_protocol("abc|c")
+            parse_protocol("abc|c|12")
         );
     }
 
@@ -220,11 +224,11 @@ mod test {
             (
                 vec![Metric::new(
                     Identifier::without_tags("a\\b|c;".to_string()),
-                    MetricKind::Counter,
+                    MetricKind::Counter(55),
                 )],
                 None,
             ),
-            parse_protocol("a\\\\b\\|c\\;|c")
+            parse_protocol("a\\\\b\\|c\\;|c|55")
         );
     }
 
