@@ -15,7 +15,7 @@ use figment::Figment;
 use serde::Deserialize;
 use stderrlog::Timestamp;
 
-use crate::metrics::{GaugeOperation, Identifier, Metric, MetricKind, Registry, TimerResolution};
+use crate::metrics::{Identifier, Metric, MetricKind, Registry, TimerResolution};
 
 mod backend;
 mod metrics;
@@ -158,11 +158,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "metco.memory_usage".into(),
                 HashMap::from([("host".into(), host)]),
             ),
-            MetricKind::Gauge(GaugeOperation::Set(
+            MetricKind::Counter(
                 memory_stats::memory_stats()
                     .expect("Memory usage should be computed")
-                    .physical_mem as i64,
-            )),
+                    .physical_mem as u64,
+            ),
         ));
 
         type CreatedBackend = (String, Box<dyn backend::Backend>);
