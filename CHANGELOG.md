@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+## Fixed
+
+- Gauge clears history between iterations [#27](https://github.com/zlikavac32/metco/pull/27)
+
 ## 0.9.0 - 2025-10-08
 
 ## Changed
