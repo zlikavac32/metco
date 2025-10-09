@@ -300,6 +300,11 @@ impl Registry {
             gauges.remove(gauge);
         }
 
+        gauges.iter_mut().for_each(|(_, (current, stats))| {
+            stats.clear();
+            stats.push(*current);
+        });
+
         Self {
             gauges,
             ..Default::default()
@@ -513,6 +518,7 @@ mod test {
             let statistics = registry.finalize().unwrap().0;
 
             assert_eq!(1234, statistics.gauges.get(&identifier).unwrap().0);
+            assert_eq!(1, statistics.gauges.get(&identifier).unwrap().1.count());
 
             cloned
         };
@@ -528,6 +534,7 @@ mod test {
             let statistics = registry.finalize().unwrap().0;
 
             assert_eq!(1234, statistics.gauges.get(&identifier).unwrap().0);
+            assert_eq!(1, statistics.gauges.get(&identifier).unwrap().1.count());
 
             cloned
         };
