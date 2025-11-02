@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+## Fixed
+
+- Wrong ES backend prefix for `min`/`max` timing metric [#28](https://github.com/zlikavac32/metco/pull/28)
+
 ## 0.9.1 - 2025-10-09
 
 ## Fixed

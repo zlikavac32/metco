@@ -176,8 +176,8 @@ impl Backend for ElasticSearch {
                     format!("timing.{name}.p99"),
                     stats.percentile(99.into()).into(),
                 ),
-                (format!("counter.{name}.min"), stats.min().into()),
-                (format!("counter.{name}.max"), stats.max().into()),
+                (format!("timing.{name}.min"), stats.min().into()),
+                (format!("timing.{name}.max"), stats.max().into()),
             ]);
 
             self.insert(time, map, identifier.tags(), &logger);
