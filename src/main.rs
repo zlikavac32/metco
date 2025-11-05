@@ -366,7 +366,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 ("kind".into(), "histogram".into()),
                             ]),
                         ),
-                        MetricKind::Histogram(counters_count),
+                        MetricKind::Histogram(histograms_count),
                     ));
                 }
 
