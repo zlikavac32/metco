@@ -35,7 +35,7 @@ Multiple metrics can be sent separated by `\n`. Data parsed before a parsing err
 
 ### Counters
 
-Value is always assumed to be one. This is just a simple counter.
+This is just a simple counter. Value must be a natural number.
 
 ```
 abc|c|1234
@@ -43,7 +43,7 @@ abc|c|1234
 
 ### Histograms
 
-Value is always a positive natural number. Unlike `counter`, this type can have arbitrary positive value associated with it and statistics are calculated for it.
+Value must be a natural number. It's similar to `counter`, except statistics like `min`, `max`, `sum`, etc. are calculated for it.
 
 ```
 abc|h|1234
