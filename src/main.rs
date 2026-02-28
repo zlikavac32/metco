@@ -118,6 +118,134 @@ struct CLI {
     config_path: PathBuf,
 }
 
+fn flush(
+    registry: Registry,
+    mut telemetry: Registry,
+    config: Arc<Config>,
+    host: String,
+) -> (Registry, Registry) {
+    if registry.is_empty() {
+        log::info!("Registry is empty, nothing to aggregate");
+
+        return (registry, telemetry);
+    }
+
+    let new_registry = registry.new_with_gauges();
+    let new_telemetry = telemetry.new_with_gauges();
+
+    telemetry.add(Metric::new(
+        Identifier::with_tags(
+            "metco.memory_usage".into(),
+            HashMap::from([("host".into(), host)]),
+        ),
+        MetricKind::Counter(
+            memory_stats::memory_stats()
+                .expect("Memory usage should be computed")
+                .physical_mem as u64,
+        ),
+    ));
+
+    type CreatedBackend = (String, Box<dyn backend::Backend>);
+    type CreateBackendError = (String, Box<dyn Error>);
+
+    thread::spawn(move || {
+        let backends = config
+            .backends
+            .enabled
+            .iter()
+            .map(
+                |(name, backend)| -> Result<CreatedBackend, CreateBackendError> {
+                    Ok((
+                        name.clone(),
+                        match backend {
+                            Backend::Console => Box::<backend::Console>::default(),
+                            Backend::PostgreSQL {
+                                host,
+                                port,
+                                user,
+                                password,
+                                db_name,
+                            } => Box::new(backend::PostgreSQL::new({
+                                let mut config = postgres::Config::new();
+
+                                config.host(host);
+                                config.port(*port);
+                                config.user(user);
+                                config.password(password);
+                                config.dbname(db_name);
+
+                                match config.connect(postgres::NoTls) {
+                                    Ok(connection) => connection,
+                                    Err(err) => return Err((name.clone(), err.into())),
+                                }
+                            })),
+                            Backend::ElasticSearch {
+                                dsn,
+                                index_format,
+                                accept_invalid_certs,
+                            } => {
+                                let mut builder = reqwest::blocking::Client::builder();
+
+                                if *accept_invalid_certs {
+                                    builder = builder.danger_accept_invalid_certs(true);
+                                }
+
+                                Box::new(backend::ElasticSearch::new(
+                                    match builder.build() {
+                                        Ok(client) => client,
+                                        Err(err) => return Err((name.clone(), err.into())),
+                                    },
+                                    dsn.clone(),
+                                    index_format.clone(),
+                                ))
+                            }
+                        },
+                    ))
+                },
+            )
+            .filter_map(|backend_result| match backend_result {
+                Ok(backend) => Some(backend),
+                Err((backend, err)) => {
+                    log::error!("[{}] {}", backend, err);
+
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        log::info!("Aggregating collected metrics");
+
+        let now = Utc::now();
+
+        let time_frames = [registry, telemetry]
+            .into_iter()
+            .filter_map(|registry| {
+                if let Some((time_frame, overflowing_metrics)) = registry.finalize() {
+                    for overflowing_metric in overflowing_metrics {
+                        log::warn!("Overflowing metric {}", overflowing_metric);
+                    }
+
+                    Some(time_frame)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        for mut backend in backends {
+            log::trace!("Notifying backend {:?}", backend.0);
+
+            for time_frame in &time_frames {
+                backend
+                    .1
+                    .publish(&now, time_frame, backend::Logger::new(backend.0.clone()));
+            }
+        }
+    });
+
+    (new_registry, new_telemetry)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = CLI::parse();
     init_logging(&cli);
@@ -137,134 +265,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let socket = UdpSocket::bind(format!("{}:{}", config.host, config.port)).unwrap();
 
     let mut now = Instant::now();
-
-    fn flush(
-        registry: Registry,
-        mut telemetry: Registry,
-        config: Arc<Config>,
-        host: String,
-    ) -> (Registry, Registry) {
-        if registry.is_empty() {
-            log::info!("Registry is empty, nothing to aggregate");
-
-            return (registry, telemetry);
-        }
-
-        let new_registry = registry.new_with_gauges();
-        let new_telemetry = telemetry.new_with_gauges();
-
-        telemetry.add(Metric::new(
-            Identifier::with_tags(
-                "metco.memory_usage".into(),
-                HashMap::from([("host".into(), host)]),
-            ),
-            MetricKind::Counter(
-                memory_stats::memory_stats()
-                    .expect("Memory usage should be computed")
-                    .physical_mem as u64,
-            ),
-        ));
-
-        type CreatedBackend = (String, Box<dyn backend::Backend>);
-        type CreateBackendError = (String, Box<dyn Error>);
-
-        thread::spawn(move || {
-            let backends = config
-                .backends
-                .enabled
-                .iter()
-                .map(
-                    |(name, backend)| -> Result<CreatedBackend, CreateBackendError> {
-                        Ok((
-                            name.clone(),
-                            match backend {
-                                Backend::Console => Box::<backend::Console>::default(),
-                                Backend::PostgreSQL {
-                                    host,
-                                    port,
-                                    user,
-                                    password,
-                                    db_name,
-                                } => Box::new(backend::PostgreSQL::new({
-                                    let mut config = postgres::Config::new();
-
-                                    config.host(host);
-                                    config.port(*port);
-                                    config.user(user);
-                                    config.password(password);
-                                    config.dbname(db_name);
-
-                                    match config.connect(postgres::NoTls) {
-                                        Ok(connection) => connection,
-                                        Err(err) => return Err((name.clone(), err.into())),
-                                    }
-                                })),
-                                Backend::ElasticSearch {
-                                    dsn,
-                                    index_format,
-                                    accept_invalid_certs,
-                                } => {
-                                    let mut builder = reqwest::blocking::Client::builder();
-
-                                    if *accept_invalid_certs {
-                                        builder = builder.danger_accept_invalid_certs(true);
-                                    }
-
-                                    Box::new(backend::ElasticSearch::new(
-                                        match builder.build() {
-                                            Ok(client) => client,
-                                            Err(err) => return Err((name.clone(), err.into())),
-                                        },
-                                        dsn.clone(),
-                                        index_format.clone(),
-                                    ))
-                                }
-                            },
-                        ))
-                    },
-                )
-                .filter_map(|backend_result| match backend_result {
-                    Ok(backend) => Some(backend),
-                    Err((backend, err)) => {
-                        log::error!("[{}] {}", backend, err);
-
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            log::info!("Aggregating collected metrics");
-
-            let now = Utc::now();
-
-            let time_frames = [registry, telemetry]
-                .into_iter()
-                .filter_map(|registry| {
-                    if let Some((time_frame, overflowing_metrics)) = registry.finalize() {
-                        for overflowing_metric in overflowing_metrics {
-                            log::warn!("Overflowing metric {}", overflowing_metric);
-                        }
-
-                        Some(time_frame)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            for mut backend in backends {
-                log::trace!("Notifying backend {:?}", backend.0);
-
-                for time_frame in &time_frames {
-                    backend
-                        .1
-                        .publish(&now, time_frame, backend::Logger::new(backend.0.clone()));
-                }
-            }
-        });
-
-        (new_registry, new_telemetry)
-    }
 
     let mut registry = Registry::default();
     let mut telemetry = Registry::default();
