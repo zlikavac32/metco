@@ -118,33 +118,7 @@ struct CLI {
     config_path: PathBuf,
 }
 
-fn flush(
-    registry: Registry,
-    mut telemetry: Registry,
-    config: Arc<Config>,
-    host: String,
-) -> (Registry, Registry) {
-    if registry.is_empty() {
-        log::info!("Registry is empty, nothing to aggregate");
-
-        return (registry, telemetry);
-    }
-
-    let new_registry = registry.new_with_gauges();
-    let new_telemetry = telemetry.new_with_gauges();
-
-    telemetry.add(Metric::new(
-        Identifier::with_tags(
-            "metco.memory_usage".into(),
-            HashMap::from([("host".into(), host)]),
-        ),
-        MetricKind::Counter(
-            memory_stats::memory_stats()
-                .expect("Memory usage should be computed")
-                .physical_mem as u64,
-        ),
-    ));
-
+fn flush_to_backends(config: Arc<Config>, registry: Registry, telemetry: Registry) {
     type CreatedBackend = (String, Box<dyn backend::Backend>);
     type CreateBackendError = (String, Box<dyn Error>);
 
@@ -242,6 +216,36 @@ fn flush(
             }
         }
     });
+}
+
+fn flush(
+    registry: Registry,
+    mut telemetry: Registry,
+    config: Arc<Config>,
+    host: String,
+) -> (Registry, Registry) {
+    if registry.is_empty() {
+        log::info!("Registry is empty, nothing to aggregate");
+
+        return (registry, telemetry);
+    }
+
+    let new_registry = registry.new_with_gauges();
+    let new_telemetry = telemetry.new_with_gauges();
+
+    telemetry.add(Metric::new(
+        Identifier::with_tags(
+            "metco.memory_usage".into(),
+            HashMap::from([("host".into(), host)]),
+        ),
+        MetricKind::Counter(
+            memory_stats::memory_stats()
+                .expect("Memory usage should be computed")
+                .physical_mem as u64,
+        ),
+    ));
+
+    flush_to_backends(config, registry, telemetry);
 
     (new_registry, new_telemetry)
 }
