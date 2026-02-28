@@ -344,57 +344,27 @@ fn main() -> Result<(), Box<dyn Error>> {
                     ));
                 }
 
-                if counters_count > 0 {
-                    telemetry.add(Metric::new(
-                        Identifier::with_tags(
-                            "metco.metrics_parsed".into(),
-                            HashMap::from([
-                                ("host".into(), host.clone()),
-                                ("kind".into(), "counter".into()),
-                            ]),
-                        ),
-                        MetricKind::Histogram(counters_count),
-                    ));
+                macro_rules! metric_kind_telemetry {
+                    ($var:ident, $kind:literal) => {
+                        if $var > 0 {
+                            telemetry.add(Metric::new(
+                                Identifier::with_tags(
+                                    "metco.metrics_parsed".into(),
+                                    HashMap::from([
+                                        ("host".into(), host.clone()),
+                                        ("kind".into(), $kind.into()),
+                                    ]),
+                                ),
+                                MetricKind::Histogram($var),
+                            ));
+                        }
+                    };
                 }
 
-                if histograms_count > 0 {
-                    telemetry.add(Metric::new(
-                        Identifier::with_tags(
-                            "metco.metrics_parsed".into(),
-                            HashMap::from([
-                                ("host".into(), host.clone()),
-                                ("kind".into(), "histogram".into()),
-                            ]),
-                        ),
-                        MetricKind::Histogram(histograms_count),
-                    ));
-                }
-
-                if timers_count > 0 {
-                    telemetry.add(Metric::new(
-                        Identifier::with_tags(
-                            "metco.metrics_parsed".into(),
-                            HashMap::from([
-                                ("host".into(), host.clone()),
-                                ("kind".into(), "timer".into()),
-                            ]),
-                        ),
-                        MetricKind::Histogram(timers_count),
-                    ));
-                }
-
-                if gauges_count > 0 {
-                    telemetry.add(Metric::new(
-                        Identifier::with_tags(
-                            "metco.metrics_parsed".into(),
-                            HashMap::from([
-                                ("host".into(), host.clone()),
-                                ("kind".into(), "gauge".into()),
-                            ]),
-                        ),
-                        MetricKind::Histogram(gauges_count),
-                    ));
-                }
+                metric_kind_telemetry!(counters_count, "counter");
+                metric_kind_telemetry!(histograms_count, "histogram");
+                metric_kind_telemetry!(timers_count, "timer");
+                metric_kind_telemetry!(gauges_count, "gauge");
 
                 let elapsed = now.elapsed();
 
