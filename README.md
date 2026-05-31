@@ -1,5 +1,7 @@
 # MetCo
 
+[![Crates.io](https://img.shields.io/crates/v/metco.svg)](https://crates.io/crates/metco)
+
 Metrics Collector inspired by StatsD.
 
 Additional/removed features compared to StatsD are:
