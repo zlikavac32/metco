@@ -111,6 +111,12 @@ fn parse_metric(original: &str) -> IResult<&str, Metric> {
 
 /// Parses all metrics from `input`, returning them along with any input that could not be parsed.
 pub fn parse_protocol(input: &str) -> (Vec<Metric>, Option<&str>) {
+    let input = input.strip_suffix('\n').unwrap_or(input);
+
+    if input.is_empty() {
+        return (vec![], None);
+    }
+
     match separated_list1(char('\n'), parse_metric)(input) {
         Ok((rest, metrics)) => (metrics, (!rest.is_empty()).then_some(rest)),
         Err(_) => (vec![], Some(input)),
@@ -176,6 +182,34 @@ mod test {
                 Some("\nab\nc|c|2")
             ),
             parse_protocol("abc|c|1\nab\nc|c|2")
+        );
+    }
+
+    #[test]
+    fn trailing_new_line_is_ignored() {
+        assert_eq!(
+            (
+                vec![
+                    Metric::new(Identifier::without_tags("abc"), MetricKind::Counter(1)),
+                    Metric::new(Identifier::without_tags("def"), MetricKind::Counter(2)),
+                ],
+                None
+            ),
+            parse_protocol("abc|c|1\ndef|c|2\n")
+        );
+
+        assert_eq!((vec![], None), parse_protocol("\n"));
+        assert_eq!((vec![], None), parse_protocol(""));
+
+        assert_eq!(
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc"),
+                    MetricKind::Counter(1)
+                )],
+                Some("\n")
+            ),
+            parse_protocol("abc|c|1\n\n")
         );
     }
 

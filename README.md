@@ -35,7 +35,7 @@ Value format and optional additional fields are defined by the metric type.
 
 Tag names and values can not contain a new line.
 
-Multiple metrics can be sent separated by `\n`. Data parsed before a parsing error occurs is still considered valid, but remaining data is not parsed.
+Multiple metrics can be sent separated by `\n`. A single trailing `\n` is allowed. Data parsed before a parsing error occurs is still considered valid, but remaining data is not parsed.
 
 ### Counters
 

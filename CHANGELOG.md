@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Percentiles are wrong when number of values is not 100
 - Panic when reporting overflowing metric with tags, and wrong kind reported for overflowing gauges and histograms
 - Invalid line is merged into the following line instead of being rejected
+- Trailing new line is reported as not parsed bytes
 
 ## 0.9.1 - 2025-10-09
 
