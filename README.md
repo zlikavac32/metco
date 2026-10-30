@@ -71,7 +71,7 @@ abc|t|1234|ms
 
 ### Gauges
 
-Value is a natural number.
+Value is an integer within the range of signed 64-bit integer.
 
 ```
 abc|g|123
@@ -81,7 +81,7 @@ abc|g|123
 abc|g|-123
 ```
 
-Instead of setting value, it can be updated by incrementing/decrementing by a specified amount.
+Instead of setting value, it can be updated by incrementing/decrementing by a specified amount. Update is rejected if the resulting value would not fit into signed 64-bit integer.
 
 ```
 abc|g|+=123
