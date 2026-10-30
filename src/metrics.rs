@@ -1,6 +1,5 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
-use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerResolution {
@@ -47,19 +46,22 @@ impl MetricKind {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+/// Metric name with its tags.
+///
+/// Tags are kept sorted so that equal identifiers always hash equally.
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Identifier {
     name: String,
-    tags: HashMap<String, String>,
+    tags: BTreeMap<String, String>,
 }
 
 impl Identifier {
     #[cfg(test)]
     pub fn without_tags(name: impl Into<String>) -> Self {
-        Self::with_tags(name, HashMap::new())
+        Self::with_tags(name, BTreeMap::new())
     }
 
-    pub fn with_tags(name: impl Into<String>, tags: HashMap<String, String>) -> Self {
+    pub fn with_tags(name: impl Into<String>, tags: BTreeMap<String, String>) -> Self {
         Self {
             name: name.into(),
             tags,
@@ -70,19 +72,8 @@ impl Identifier {
         &self.name
     }
 
-    pub fn tags(&self) -> &HashMap<String, String> {
+    pub fn tags(&self) -> &BTreeMap<String, String> {
         &self.tags
-    }
-}
-
-impl Hash for Identifier {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write(self.name.as_bytes());
-
-        for (k, v) in &self.tags {
-            state.write(k.as_bytes());
-            state.write(v.as_bytes());
-        }
     }
 }
 
@@ -468,6 +459,29 @@ mod test {
             .is_ok());
 
         assert_eq!(map, registry.histograms)
+    }
+
+    #[test]
+    fn metrics_with_same_tags_are_aggregated_together() {
+        let mut registry = Registry::default();
+
+        for _ in 0..50 {
+            let tags = (0..8)
+                .map(|i| (format!("tag{i}"), format!("value{i}")))
+                .collect::<HashMap<_, _>>()
+                .into_iter()
+                .collect();
+
+            registry
+                .add(Metric::new(
+                    Identifier::with_tags("test", tags),
+                    MetricKind::Counter(1),
+                ))
+                .unwrap();
+        }
+
+        assert_eq!(1, registry.counters.len());
+        assert_eq!(Some(&50), registry.counters.values().next());
     }
 
     #[test]

@@ -2,7 +2,7 @@ use crate::backend::{Backend, Logger};
 use crate::metrics::{Identifier, Statistics, TimeFrame};
 use chrono::{DateTime, Utc};
 use postgres_types::Json;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 /*
 Used table structure is below.
@@ -175,7 +175,7 @@ impl PostgreSQL {
         time: &DateTime<Utc>,
         table: Table,
         name: &str,
-        tags: &HashMap<String, String>,
+        tags: &BTreeMap<String, String>,
         value: f64,
         logger: &Logger,
     ) {

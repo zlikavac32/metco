@@ -115,7 +115,7 @@ pub fn parse_protocol(input: &str) -> (Vec<Metric>, Option<&str>) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     #[test]
     fn metric_identifier_with_tags_can_be_parsed() {
@@ -124,7 +124,7 @@ mod test {
                 "|c",
                 Identifier::with_tags(
                     "abc",
-                    HashMap::from([
+                    BTreeMap::from([
                         ("tag1".into(), "value;123".into()),
                         ("tag=2".into(), "te=st3".into())
                     ])

@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Wrong ES backend prefix for `min`/`max` timing metric [#28](https://github.com/zlikavac32/metco/pull/28)
 - Wrong variable used for internal `histogram` count [#29](https://github.com/zlikavac32/metco/pull/29)
+- Metrics with multiple tags are sometimes aggregated as separate metrics
 
 ## 0.9.1 - 2025-10-09
 
