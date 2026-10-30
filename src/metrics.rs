@@ -153,11 +153,12 @@ impl Statistics {
             .try_fold(0i64, |acc, &item| acc.checked_add(item))?;
 
         let avg = sum as f64 / list.len() as f64;
-        let std = list
+        let variance = list
             .iter()
             .map(|&item| (item as f64 - avg).powi(2))
             .sum::<f64>()
-            .sqrt();
+            / list.len() as f64;
+        let std = variance.sqrt();
 
         Some(Self { list, sum, std })
     }
@@ -606,6 +607,13 @@ mod test {
         assert_eq!(100, statistics.percentile(Percentile::new(100)));
         assert_eq!(50, statistics.median());
         assert_eq!(5050, statistics.sum());
+    }
+
+    #[test]
+    fn standard_deviation_is_correctly_calculated() {
+        let statistics = Statistics::new(vec![2, 4, 4, 4, 5, 5, 7, 9]).unwrap();
+
+        assert_eq!(2., statistics.std());
     }
 
     #[test]
