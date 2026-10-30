@@ -229,7 +229,7 @@ impl Collector {
     }
 
     fn flush(&mut self) {
-        if self.registry.is_empty() {
+        if self.registry.is_empty() && self.telemetry.is_empty() {
             log::info!("Registry is empty, nothing to aggregate");
 
             return;

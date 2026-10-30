@@ -294,7 +294,10 @@ pub struct Registry {
 
 impl Registry {
     pub fn is_empty(&self) -> bool {
-        self.counters.is_empty() && self.gauges.is_empty() && self.timings.is_empty()
+        self.counters.is_empty()
+            && self.histograms.is_empty()
+            && self.gauges.is_empty()
+            && self.timings.is_empty()
     }
 
     pub fn add(&mut self, metric: Metric) -> Result<(), Overflow> {
@@ -736,6 +739,26 @@ mod test {
             registry.add(Metric::new(identifier.clone(), MetricKind::Counter(1)))
         );
         assert_eq!(Some(&i64::MAX), registry.counters.get(&identifier));
+    }
+
+    #[test]
+    fn registry_with_any_metric_is_not_empty() {
+        let identifier = Identifier::without_tags("test");
+
+        for kind in [
+            MetricKind::Counter(1),
+            MetricKind::Histogram(1),
+            MetricKind::Timing(1, TimerResolution::NanoSeconds),
+            MetricKind::Gauge(GaugeOperation::Set(1)),
+        ] {
+            let mut registry = Registry::default();
+
+            assert!(registry.is_empty());
+
+            registry.add(Metric::new(identifier.clone(), kind)).unwrap();
+
+            assert!(!registry.is_empty());
+        }
     }
 
     #[test]

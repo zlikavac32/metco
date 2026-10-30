@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Invalid line is merged into the following line instead of being rejected
 - Trailing new line is reported as not parsed bytes
 - Values bigger than `i64::MAX` wrap into negative numbers and counter sum can overflow
+- Interval with only histograms, or only internal telemetry, is not flushed
 
 ## 0.9.1 - 2025-10-09
 
