@@ -2,12 +2,13 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::io::ErrorKind;
 use std::net::UdpSocket;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use clap::Parser;
 use figment::providers::{Env, Format, Toml};
 use figment::Figment;
@@ -156,53 +157,78 @@ fn init_logging(cli: &Cli) {
         .expect("Unable to initialize logging infrastructure");
 }
 
-fn flush_to_backends(config: Arc<Config>, registry: Registry, telemetry: Registry) {
+/// Metrics collected during one refresh interval.
+struct Flush {
+    time: DateTime<Utc>,
+    registry: Registry,
+    telemetry: Registry,
+}
+
+/// Spawns a single thread which publishes flushes to backends one by one, so that slow backends
+/// can not cause threads to pile up.
+fn spawn_flush_worker(config: Arc<Config>) -> mpsc::Sender<Flush> {
+    let (sender, receiver) = mpsc::channel::<Flush>();
+
     thread::spawn(move || {
-        let backends = config
-            .backends
-            .enabled
-            .iter()
-            .filter_map(|(name, backend)| match backend.create() {
-                Ok(backend) => Some((name, backend)),
-                Err(err) => {
-                    log::error!("[{name}] {err}");
-
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        log::info!("Aggregating collected metrics");
-
-        let now = Utc::now();
-
-        let time_frames = [registry, telemetry]
-            .into_iter()
-            .map(|registry| {
-                let (time_frame, overflowing_metrics) = registry.finalize();
-
-                for overflowing_metric in overflowing_metrics {
-                    log::warn!("Overflowing metric {overflowing_metric}");
-                }
-
-                time_frame
-            })
-            .collect::<Vec<_>>();
-
-        for (name, mut backend) in backends {
-            log::trace!("Notifying backend {name:?}");
-
-            let logger = backend::Logger::new(name);
-
-            for time_frame in &time_frames {
-                backend.publish(&now, time_frame, &logger);
-            }
+        for flush in receiver {
+            // Panic is already reported by the panic hook. Catching it keeps the worker alive
+            // for following flushes.
+            let _ = panic::catch_unwind(AssertUnwindSafe(|| flush_to_backends(&config, flush)));
         }
     });
+
+    sender
+}
+
+fn flush_to_backends(config: &Config, flush: Flush) {
+    let Flush {
+        time,
+        registry,
+        telemetry,
+    } = flush;
+
+    let backends = config
+        .backends
+        .enabled
+        .iter()
+        .filter_map(|(name, backend)| match backend.create() {
+            Ok(backend) => Some((name, backend)),
+            Err(err) => {
+                log::error!("[{name}] {err}");
+
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    log::info!("Aggregating collected metrics");
+
+    let time_frames = [registry, telemetry]
+        .into_iter()
+        .map(|registry| {
+            let (time_frame, overflowing_metrics) = registry.finalize();
+
+            for overflowing_metric in overflowing_metrics {
+                log::warn!("Overflowing metric {overflowing_metric}");
+            }
+
+            time_frame
+        })
+        .collect::<Vec<_>>();
+
+    for (name, mut backend) in backends {
+        log::trace!("Notifying backend {name:?}");
+
+        let logger = backend::Logger::new(name);
+
+        for time_frame in &time_frames {
+            backend.publish(&time, time_frame, &logger);
+        }
+    }
 }
 
 struct Collector {
-    config: Arc<Config>,
+    flush_worker: mpsc::Sender<Flush>,
     host: String,
     registry: Registry,
     telemetry: Registry,
@@ -211,7 +237,7 @@ struct Collector {
 impl Collector {
     fn new(config: Arc<Config>, host: String) -> Self {
         Self {
-            config,
+            flush_worker: spawn_flush_worker(config),
             host,
             registry: Registry::default(),
             telemetry: Registry::default(),
@@ -250,7 +276,15 @@ impl Collector {
 
         let telemetry = std::mem::replace(&mut self.telemetry, new_telemetry);
 
-        flush_to_backends(Arc::clone(&self.config), registry, telemetry);
+        let flush = Flush {
+            time: Utc::now(),
+            registry,
+            telemetry,
+        };
+
+        if self.flush_worker.send(flush).is_err() {
+            log::error!("Flush worker is not running, collected metrics are lost");
+        }
     }
 
     fn handle_payload(&mut self, payload: &[u8]) {

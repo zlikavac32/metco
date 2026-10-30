@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - Interval with only histograms, or only internal telemetry, is not flushed
 - Datagrams larger than 2048 bytes are truncated and last metric may be parsed with wrong value
 - Stale socket read timeout is used right after flush, and zero `refresh-interval` is accepted
+- Slow backends cause flush threads to pile up
 
 ## 0.9.1 - 2025-10-09
 
