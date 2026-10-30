@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Standard deviation is not divided by the number of values
 - Percentiles are wrong when number of values is not 100
 - Panic when reporting overflowing metric with tags, and wrong kind reported for overflowing gauges and histograms
+- Invalid line is merged into the following line instead of being rejected
 
 ## 0.9.1 - 2025-10-09
 

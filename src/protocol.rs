@@ -61,7 +61,7 @@ fn parse_kind(input: &str) -> IResult<&str, MetricKind> {
 
 fn parse_name(input: &str) -> IResult<&str, String> {
     escaped_transform(
-        is_not("|\\;"),
+        is_not("|\\;\n"),
         '\\',
         alt((
             value("\\", tag("\\")),
@@ -73,9 +73,14 @@ fn parse_name(input: &str) -> IResult<&str, String> {
 
 fn parse_tag_name(input: &str) -> IResult<&str, String> {
     escaped_transform(
-        is_not("\\="),
+        is_not("|\\;=\n"),
         '\\',
-        alt((value("\\", tag("\\")), value("=", tag("=")))),
+        alt((
+            value("\\", tag("\\")),
+            value("|", tag("|")),
+            value(";", tag(";")),
+            value("=", tag("=")),
+        )),
     )(input)
 }
 
@@ -131,6 +136,46 @@ mod test {
                 )
             )),
             parse_identifier("abc;tag1=value\\;123;tag\\=2=te=st3|c")
+        );
+    }
+
+    #[test]
+    fn tag_name_with_escaped_chars_can_be_parsed() {
+        assert_eq!(
+            Ok((
+                "|c",
+                Identifier::with_tags("abc", BTreeMap::from([("a|b;c".into(), "d".into())]))
+            )),
+            parse_identifier("abc;a\\|b\\;c=d|c")
+        );
+    }
+
+    #[test]
+    fn invalid_line_does_not_swallow_next_line() {
+        assert_eq!(
+            (vec![], Some("garbage\nabc|c|1")),
+            parse_protocol("garbage\nabc|c|1")
+        );
+
+        assert_eq!(
+            (vec![], Some("abc;tag\nabc|c|1")),
+            parse_protocol("abc;tag\nabc|c|1")
+        );
+
+        assert_eq!(
+            (vec![], Some("abc;t|c|1\nabc;k=v|c|2")),
+            parse_protocol("abc;t|c|1\nabc;k=v|c|2")
+        );
+
+        assert_eq!(
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc"),
+                    MetricKind::Counter(1)
+                )],
+                Some("\nab\nc|c|2")
+            ),
+            parse_protocol("abc|c|1\nab\nc|c|2")
         );
     }
 
