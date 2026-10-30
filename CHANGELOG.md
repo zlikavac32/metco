@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Trailing new line is reported as not parsed bytes
 - Values bigger than `i64::MAX` wrap into negative numbers and counter sum can overflow
 - Interval with only histograms, or only internal telemetry, is not flushed
+- Datagrams larger than 2048 bytes are truncated and last metric may be parsed with wrong value
 
 ## 0.9.1 - 2025-10-09
 

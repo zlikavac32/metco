@@ -20,6 +20,9 @@ mod backend;
 mod metrics;
 mod protocol;
 
+/// Big enough for any UDP datagram so that payloads are never truncated.
+const MAX_DATAGRAM_SIZE: usize = 65_536;
+
 #[derive(Deserialize, Debug)]
 #[serde(
     tag = "type",
@@ -332,7 +335,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let refresh_interval = config.refresh_interval;
     let mut collector = Collector::new(config, host);
     let mut last_flush = Instant::now();
-    let mut buff = [0; 2048];
+    let mut buff = vec![0; MAX_DATAGRAM_SIZE];
 
     loop {
         let elapsed = last_flush.elapsed();
