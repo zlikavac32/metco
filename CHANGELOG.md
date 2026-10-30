@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Wrong variable used for internal `histogram` count [#29](https://github.com/zlikavac32/metco/pull/29)
 - Metrics with multiple tags are sometimes aggregated as separate metrics
 - Standard deviation is not divided by the number of values
+- Percentiles are wrong when number of values is not 100
 
 ## 0.9.1 - 2025-10-09
 

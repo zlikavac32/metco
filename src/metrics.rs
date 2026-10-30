@@ -94,7 +94,7 @@ impl Metric {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Percentile(f64);
+pub struct Percentile(usize);
 
 impl Percentile {
     pub const P50: Self = Self::new(50);
@@ -105,7 +105,7 @@ impl Percentile {
     pub const fn new(value: u32) -> Self {
         assert!(value <= 100, "Percentile out of range [0, 100]");
 
-        Self(value as f64)
+        Self(value as usize)
     }
 }
 
@@ -193,8 +193,11 @@ impl Statistics {
         self.std
     }
 
+    /// Calculates percentile using the nearest-rank method.
     pub fn percentile(&self, p: Percentile) -> i64 {
-        self.list[(self.list.len() as f64 * (p.0 / 100. - 0.01)).floor() as usize]
+        let rank = (p.0 * self.list.len()).div_ceil(100);
+
+        self.list[rank.saturating_sub(1)]
     }
 
     /// All statistics published by backends, in a stable order.
@@ -607,6 +610,27 @@ mod test {
         assert_eq!(100, statistics.percentile(Percentile::new(100)));
         assert_eq!(50, statistics.median());
         assert_eq!(5050, statistics.sum());
+    }
+
+    #[test]
+    fn percentiles_are_correctly_calculated_for_any_count() {
+        let statistics = Statistics::new((1..=1000).collect()).unwrap();
+
+        assert_eq!(1, statistics.percentile(Percentile::new(0)));
+        assert_eq!(500, statistics.median());
+        assert_eq!(750, statistics.percentile(Percentile::P75));
+        assert_eq!(990, statistics.percentile(Percentile::P99));
+        assert_eq!(1000, statistics.percentile(Percentile::new(100)));
+
+        let statistics = Statistics::new(vec![1, 2, 3]).unwrap();
+
+        assert_eq!(2, statistics.median());
+        assert_eq!(3, statistics.percentile(Percentile::P75));
+
+        let statistics = Statistics::new(vec![7]).unwrap();
+
+        assert_eq!(7, statistics.percentile(Percentile::new(0)));
+        assert_eq!(7, statistics.percentile(Percentile::P99));
     }
 
     #[test]
