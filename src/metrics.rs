@@ -250,21 +250,23 @@ impl TimeFrame {
 
 #[derive(Debug)]
 pub enum OverflowingMetric {
-    Counter(Identifier),
+    Gauge(Identifier),
+    Histogram(Identifier),
     Timing(Identifier),
 }
 
 impl Display for OverflowingMetric {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let (kind, identifier) = match self {
-            OverflowingMetric::Counter(identifier) => ("counter", identifier),
+            OverflowingMetric::Gauge(identifier) => ("gauge", identifier),
+            OverflowingMetric::Histogram(identifier) => ("histogram", identifier),
             OverflowingMetric::Timing(identifier) => ("timing", identifier),
         };
 
         write!(f, "{kind}: {}", identifier.name)?;
 
         if !identifier.tags.is_empty() {
-            todo!("Tags!");
+            write!(f, " ({:?})", identifier.tags)?;
         }
 
         Ok(())
@@ -379,7 +381,7 @@ impl Registry {
                         },
                     )),
                     None => {
-                        overflowing_metrics.push(OverflowingMetric::Counter(identifier));
+                        overflowing_metrics.push(OverflowingMetric::Gauge(identifier));
                         None
                     }
                 }
@@ -388,7 +390,7 @@ impl Registry {
 
         let histograms = collect_statistics(
             self.histograms,
-            OverflowingMetric::Counter,
+            OverflowingMetric::Histogram,
             &mut overflowing_metrics,
         );
 
@@ -631,6 +633,50 @@ mod test {
 
         assert_eq!(7, statistics.percentile(Percentile::new(0)));
         assert_eq!(7, statistics.percentile(Percentile::P99));
+    }
+
+    #[test]
+    fn overflowing_metrics_are_reported_with_kind_and_tags() {
+        let mut registry = Registry::default();
+        let tags = BTreeMap::from([("host".to_owned(), "a".to_owned())]);
+
+        for _ in 0..2 {
+            registry
+                .add(Metric::new(
+                    Identifier::with_tags("gauge", tags.clone()),
+                    MetricKind::Gauge(GaugeOperation::Set(i64::MAX)),
+                ))
+                .unwrap();
+            registry
+                .add(Metric::new(
+                    Identifier::with_tags("histogram", tags.clone()),
+                    MetricKind::Histogram(i64::MAX as u64),
+                ))
+                .unwrap();
+            registry
+                .add(Metric::new(
+                    Identifier::with_tags("timing", tags.clone()),
+                    MetricKind::Timing(i64::MAX as u64, TimerResolution::NanoSeconds),
+                ))
+                .unwrap();
+        }
+
+        let (_, overflowing_metrics) = registry.finalize();
+
+        let mut reported = overflowing_metrics
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        reported.sort();
+
+        assert_eq!(
+            vec![
+                r#"gauge: gauge ({"host": "a"})"#,
+                r#"histogram: histogram ({"host": "a"})"#,
+                r#"timing: timing ({"host": "a"})"#,
+            ],
+            reported
+        );
     }
 
     #[test]
