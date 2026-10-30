@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Panic when reporting overflowing metric with tags, and wrong kind reported for overflowing gauges and histograms
 - Invalid line is merged into the following line instead of being rejected
 - Trailing new line is reported as not parsed bytes
+- Values bigger than `i64::MAX` wrap into negative numbers and counter sum can overflow
 
 ## 0.9.1 - 2025-10-09
 

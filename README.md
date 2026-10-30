@@ -39,7 +39,7 @@ Multiple metrics can be sent separated by `\n`. A single trailing `\n` is allowe
 
 ### Counters
 
-This is just a simple counter. Value must be a natural number.
+This is just a simple counter. Value must be a natural number not bigger than `9223372036854775807` (maximum signed 64-bit integer). Metric is rejected if the sum of all values within one interval would be bigger than that.
 
 ```
 abc|c|1234
@@ -47,7 +47,7 @@ abc|c|1234
 
 ### Histograms
 
-Value must be a natural number. It's similar to `counter`, except statistics like `min`, `max`, `sum`, etc. are calculated for it.
+Value must be a natural number not bigger than `9223372036854775807` (maximum signed 64-bit integer). It's similar to `counter`, except statistics like `min`, `max`, `sum`, etc. are calculated for it.
 
 ```
 abc|h|1234
@@ -57,7 +57,7 @@ abc|h|1234
 
 By default resolution is milliseconds.
 
-Value is always a positive natural number
+Value is always a positive natural number. Value converted to nanoseconds must not be bigger than `9223372036854775807` (maximum signed 64-bit integer), which is roughly 292 years.
 
 ```
 abc|t|1234

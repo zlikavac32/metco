@@ -302,23 +302,23 @@ impl Registry {
 
         match kind {
             MetricKind::Counter(value) => {
-                *self.counters.entry(identifier).or_default() += value as i64;
+                let value = i64::try_from(value).map_err(|_| Overflow)?;
+                let counter = self.counters.entry(identifier).or_default();
+
+                *counter = counter.checked_add(value).ok_or(Overflow)?;
             }
             MetricKind::Histogram(value) => {
-                self.histograms
-                    .entry(identifier)
-                    .or_default()
-                    .push(value as i64);
+                let value = i64::try_from(value).map_err(|_| Overflow)?;
+
+                self.histograms.entry(identifier).or_default().push(value);
             }
             MetricKind::Timing(value, resolution) => {
                 let nanos = value
                     .checked_mul(resolution.nanos_multiplier())
+                    .and_then(|nanos| i64::try_from(nanos).ok())
                     .ok_or(Overflow)?;
 
-                self.timings
-                    .entry(identifier)
-                    .or_default()
-                    .push(nanos as i64);
+                self.timings.entry(identifier).or_default().push(nanos);
             }
             MetricKind::Gauge(GaugeOperation::Set(value)) => {
                 self.removed_gauges.remove(&identifier);
@@ -677,6 +677,65 @@ mod test {
             ],
             reported
         );
+    }
+
+    #[test]
+    fn values_not_fitting_into_i64_are_rejected() {
+        let mut registry = Registry::default();
+        let identifier = Identifier::without_tags("test");
+        let too_big = i64::MAX as u64 + 1;
+
+        assert_eq!(
+            Err(Overflow),
+            registry.add(Metric::new(
+                identifier.clone(),
+                MetricKind::Counter(too_big)
+            ))
+        );
+        assert_eq!(
+            Err(Overflow),
+            registry.add(Metric::new(
+                identifier.clone(),
+                MetricKind::Histogram(too_big)
+            ))
+        );
+        assert_eq!(
+            Err(Overflow),
+            registry.add(Metric::new(
+                identifier.clone(),
+                MetricKind::Timing(too_big, TimerResolution::NanoSeconds)
+            ))
+        );
+        assert_eq!(
+            Err(Overflow),
+            registry.add(Metric::new(
+                identifier.clone(),
+                MetricKind::Timing(u64::MAX / 1_000, TimerResolution::MicroSeconds)
+            ))
+        );
+
+        assert!(registry.counters.is_empty());
+        assert!(registry.histograms.is_empty());
+        assert!(registry.timings.is_empty());
+    }
+
+    #[test]
+    fn counter_overflow_is_rejected() {
+        let mut registry = Registry::default();
+        let identifier = Identifier::without_tags("test");
+
+        registry
+            .add(Metric::new(
+                identifier.clone(),
+                MetricKind::Counter(i64::MAX as u64),
+            ))
+            .unwrap();
+
+        assert_eq!(
+            Err(Overflow),
+            registry.add(Metric::new(identifier.clone(), MetricKind::Counter(1)))
+        );
+        assert_eq!(Some(&i64::MAX), registry.counters.get(&identifier));
     }
 
     #[test]
