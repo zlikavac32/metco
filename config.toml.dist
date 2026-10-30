@@ -1,6 +1,7 @@
 host = "127.0.0.1"
 port = 3232
 
+# how often collected metrics are flushed to backends, must be greater than zero
 refresh-interval = '60 s'
 
 [backend]

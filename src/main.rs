@@ -330,6 +330,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             .extract()?,
     );
 
+    if config.refresh_interval.is_zero() {
+        return Err("refresh-interval must be greater than zero".into());
+    }
+
     let socket = UdpSocket::bind((config.host.as_str(), config.port))?;
 
     let refresh_interval = config.refresh_interval;
@@ -343,15 +347,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         if elapsed >= refresh_interval {
             collector.flush();
             last_flush = Instant::now();
-        } else {
-            socket.set_read_timeout(Some(refresh_interval - elapsed))?;
+
+            continue;
         }
+
+        socket.set_read_timeout(Some(refresh_interval - elapsed))?;
 
         log::info!("Waiting for data from socket");
 
         match socket.recv(&mut buff) {
             Ok(size_read) => collector.handle_payload(&buff[..size_read]),
-            Err(err) if err.kind() == ErrorKind::WouldBlock => log::trace!("Read timeout reached"),
+            // Timeout is reported as `WouldBlock` on Unix and as `TimedOut` on Windows.
+            Err(err) if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                log::trace!("Read timeout reached")
+            }
             Err(err) => {
                 log::error!("Error occurred: {err}");
 
