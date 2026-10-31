@@ -1,99 +1,56 @@
 use crate::metrics::{GaugeOperation, Identifier, Metric, MetricKind, TimerResolution};
 use nom::branch::alt;
 use nom::bytes::complete::{escaped_transform, is_not, tag};
-use nom::character::complete::{char, digit1};
+use nom::character::complete::{char, digit1, one_of, u64};
 use nom::combinator::{map, map_res, opt, recognize, value};
-use nom::error::ErrorKind;
+use nom::error::{Error, ErrorKind};
 use nom::multi::separated_list1;
-use nom::sequence::tuple;
+use nom::sequence::{pair, preceded, separated_pair, tuple};
 use nom::IResult;
-use std::collections::HashMap;
 
 fn parse_counter(input: &str) -> IResult<&str, MetricKind> {
-    let (input, _) = tag("c|")(input)?;
-
-    fn into_u64(input: &str) -> Result<MetricKind, std::num::ParseIntError> {
-        Ok(MetricKind::Counter(input.parse::<u64>()?))
-    }
-
-    map_res(digit1, into_u64)(input)
+    map(preceded(tag("c|"), u64), MetricKind::Counter)(input)
 }
 
 fn parse_histogram(input: &str) -> IResult<&str, MetricKind> {
-    let (input, _) = tag("h|")(input)?;
+    map(preceded(tag("h|"), u64), MetricKind::Histogram)(input)
+}
 
-    fn into_u64(input: &str) -> Result<MetricKind, std::num::ParseIntError> {
-        Ok(MetricKind::Histogram(input.parse::<u64>()?))
-    }
-
-    map_res(digit1, into_u64)(input)
+fn parse_timer_resolution(input: &str) -> IResult<&str, TimerResolution> {
+    alt((
+        value(TimerResolution::NanoSeconds, tag("ns")),
+        value(TimerResolution::MilliSeconds, tag("ms")),
+        value(TimerResolution::MicroSeconds, tag("us")),
+        value(TimerResolution::Seconds, tag("s")),
+    ))(input)
 }
 
 fn parse_timing(input: &str) -> IResult<&str, MetricKind> {
     let (input, _) = tag("t|")(input)?;
 
-    fn into_u64_timing(input: &str) -> Result<MetricKind, std::num::ParseIntError> {
-        Ok(MetricKind::Timing(
-            input.parse::<u64>()?,
-            TimerResolution::MilliSeconds,
-        ))
-    }
+    let (input, value) = u64(input)?;
+    let (input, resolution) = opt(preceded(char('|'), parse_timer_resolution))(input)?;
 
-    fn into_u64(input: &str) -> Result<u64, std::num::ParseIntError> {
-        input.parse::<u64>()
-    }
-
-    alt((
-        map(
-            tuple((
-                map_res(digit1, into_u64),
-                char('|'),
-                alt((
-                    value(TimerResolution::NanoSeconds, tag("ns")),
-                    value(TimerResolution::MilliSeconds, tag("ms")),
-                    value(TimerResolution::MicroSeconds, tag("us")),
-                    value(TimerResolution::Seconds, tag("s")),
-                )),
-            )),
-            |(value, _, resolution)| MetricKind::Timing(value, resolution),
-        ),
-        map_res(digit1, into_u64_timing),
-    ))(input)
+    Ok((
+        input,
+        MetricKind::Timing(value, resolution.unwrap_or(TimerResolution::MilliSeconds)),
+    ))
 }
 
 fn parse_gauge(input: &str) -> IResult<&str, MetricKind> {
-    let (input, _) = tag("g|")(input)?;
+    let set = map_res(recognize(pair(opt(char('-')), digit1)), |value: &str| {
+        value.parse().map(GaugeOperation::Set)
+    });
 
-    fn into_i64_set(input: &str) -> Result<GaugeOperation, std::num::ParseIntError> {
-        Ok(GaugeOperation::Set(input.parse::<i64>()?))
-    }
+    let modify = map(
+        separated_pair(one_of("+-"), char('='), map_res(digit1, str::parse::<i64>)),
+        |(sign, value)| GaugeOperation::Modify(if sign == '-' { -value } else { value }),
+    );
 
-    fn into_i64(input: &str) -> Result<i64, std::num::ParseIntError> {
-        input.parse::<i64>()
-    }
+    let remove = value(GaugeOperation::Remove, char('x'));
 
     map(
-        alt((
-            map(char('x'), |_| GaugeOperation::Remove),
-            map_res(
-                alt((recognize(tuple((tag("-"), digit1))), digit1)),
-                into_i64_set,
-            ),
-            map(
-                tuple((
-                    alt((char('+'), char('-'))),
-                    char('='),
-                    map_res(digit1, into_i64),
-                )),
-                |(kind, _, value)| {
-                    GaugeOperation::Modify(match kind {
-                        '+' => value,
-                        '-' => -value,
-                        _ => unreachable!("Should be covered by grammar"),
-                    })
-                },
-            ),
-        )),
+        preceded(tag("g|"), alt((remove, set, modify))),
         MetricKind::Gauge,
     )(input)
 }
@@ -102,90 +59,74 @@ fn parse_kind(input: &str) -> IResult<&str, MetricKind> {
     alt((parse_counter, parse_histogram, parse_timing, parse_gauge))(input)
 }
 
-fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
-    let (input, name) = escaped_transform(
-        is_not("|\\;"),
+fn parse_name(input: &str) -> IResult<&str, String> {
+    escaped_transform(
+        is_not("|\\;\n"),
         '\\',
         alt((
             value("\\", tag("\\")),
             value("|", tag("|")),
             value(";", tag(";")),
         )),
-    )(input)?;
+    )(input)
+}
 
-    let (input, tags) = opt(map(
-        tuple((
-            tag(";"),
-            separated_list1(
-                tag(";"),
-                map(
-                    tuple((
-                        escaped_transform(
-                            is_not("\\="),
-                            '\\',
-                            alt((value("\\", tag("\\")), value("=", tag("=")))),
-                        ),
-                        tag("="),
-                        escaped_transform(
-                            is_not("|\\;"),
-                            '\\',
-                            alt((
-                                value("\\", tag("\\")),
-                                value(";", tag(";")),
-                                value("|", tag("|")),
-                            )),
-                        ),
-                    )),
-                    |(name, _, value)| (name, value),
-                ),
-            ),
+fn parse_tag_name(input: &str) -> IResult<&str, String> {
+    escaped_transform(
+        is_not("|\\;=\n"),
+        '\\',
+        alt((
+            value("\\", tag("\\")),
+            value("|", tag("|")),
+            value(";", tag(";")),
+            value("=", tag("=")),
         )),
-        |(_, tags)| tags,
+    )(input)
+}
+
+fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
+    let (input, name) = parse_name(input)?;
+
+    let (input, tags) = opt(preceded(
+        char(';'),
+        separated_list1(
+            char(';'),
+            separated_pair(parse_tag_name, char('='), parse_name),
+        ),
     ))(input)?;
 
-    Ok((
-        input,
-        match tags {
-            None => Identifier::without_tags(name),
-            Some(tags) => Identifier::with_tags(name, HashMap::from_iter(tags)),
-        },
-    ))
+    let tags = tags
+        .map(|tags| tags.into_iter().collect())
+        .unwrap_or_default();
+
+    Ok((input, Identifier::with_tags(name, tags)))
 }
 
 fn parse_metric(original: &str) -> IResult<&str, Metric> {
-    let input = original;
-
-    let (input, identifier) = parse_identifier(input)
-        .map_err(|_| nom::Err::Error(nom::error::Error::new(original, ErrorKind::Fail)))?;
-
-    let (input, _) = char('|')(input).map_err(|_: nom::Err<nom::error::Error<_>>| {
-        nom::Err::Error(nom::error::Error::new(original, ErrorKind::Fail))
-    })?;
-
-    let (input, kind) = parse_kind(input)
-        .map_err(|_| nom::Err::Error(nom::error::Error::new(original, ErrorKind::Fail)))?;
+    let (input, (identifier, _, kind)) = tuple((parse_identifier, char('|'), parse_kind))(original)
+        .map_err(|_| nom::Err::Error(Error::new(original, ErrorKind::Fail)))?;
 
     Ok((input, Metric::new(identifier, kind)))
 }
 
-pub fn parse_protocol(input: &str) -> (Vec<Metric>, Option<String>) {
+/// Parses all metrics from `input`, returning them along with any input that could not be parsed.
+pub fn parse_protocol(input: &str) -> (Vec<Metric>, Option<&str>) {
+    let input = input.strip_suffix('\n').unwrap_or(input);
+
+    if input.is_empty() {
+        return (vec![], None);
+    }
+
     match separated_list1(char('\n'), parse_metric)(input) {
-        Ok((input, metrics)) => (
-            metrics,
-            if input.is_empty() {
-                None
-            } else {
-                Some(input.to_string())
-            },
-        ),
-        Err(_) => (vec![], Some(input.to_string())),
+        Ok((rest, metrics)) => (metrics, (!rest.is_empty()).then_some(rest)),
+        Err(_) => (vec![], Some(input)),
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     #[test]
     fn metric_identifier_with_tags_can_be_parsed() {
@@ -193,8 +134,8 @@ mod test {
             Ok((
                 "|c",
                 Identifier::with_tags(
-                    "abc".into(),
-                    HashMap::from([
+                    "abc",
+                    BTreeMap::from([
                         ("tag1".into(), "value;123".into()),
                         ("tag=2".into(), "te=st3".into())
                     ])
@@ -205,11 +146,79 @@ mod test {
     }
 
     #[test]
+    fn tag_name_with_escaped_chars_can_be_parsed() {
+        assert_eq!(
+            Ok((
+                "|c",
+                Identifier::with_tags("abc", BTreeMap::from([("a|b;c".into(), "d".into())]))
+            )),
+            parse_identifier("abc;a\\|b\\;c=d|c")
+        );
+    }
+
+    #[test]
+    fn invalid_line_does_not_swallow_next_line() {
+        assert_eq!(
+            (vec![], Some("garbage\nabc|c|1")),
+            parse_protocol("garbage\nabc|c|1")
+        );
+
+        assert_eq!(
+            (vec![], Some("abc;tag\nabc|c|1")),
+            parse_protocol("abc;tag\nabc|c|1")
+        );
+
+        assert_eq!(
+            (vec![], Some("abc;t|c|1\nabc;k=v|c|2")),
+            parse_protocol("abc;t|c|1\nabc;k=v|c|2")
+        );
+
+        assert_eq!(
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc"),
+                    MetricKind::Counter(1)
+                )],
+                Some("\nab\nc|c|2")
+            ),
+            parse_protocol("abc|c|1\nab\nc|c|2")
+        );
+    }
+
+    #[test]
+    fn trailing_new_line_is_ignored() {
+        assert_eq!(
+            (
+                vec![
+                    Metric::new(Identifier::without_tags("abc"), MetricKind::Counter(1)),
+                    Metric::new(Identifier::without_tags("def"), MetricKind::Counter(2)),
+                ],
+                None
+            ),
+            parse_protocol("abc|c|1\ndef|c|2\n")
+        );
+
+        assert_eq!((vec![], None), parse_protocol("\n"));
+        assert_eq!((vec![], None), parse_protocol(""));
+
+        assert_eq!(
+            (
+                vec![Metric::new(
+                    Identifier::without_tags("abc"),
+                    MetricKind::Counter(1)
+                )],
+                Some("\n")
+            ),
+            parse_protocol("abc|c|1\n\n")
+        );
+    }
+
+    #[test]
     fn counter_can_be_parsed() {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Counter(12),
                 )],
                 None
@@ -223,7 +232,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("a\\b|c;".to_string()),
+                    Identifier::without_tags("a\\b|c;"),
                     MetricKind::Counter(55),
                 )],
                 None,
@@ -237,7 +246,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Histogram(12),
                 )],
                 None
@@ -251,7 +260,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("a\\b|c;".to_string()),
+                    Identifier::without_tags("a\\b|c;"),
                     MetricKind::Histogram(12),
                 )],
                 None,
@@ -263,7 +272,7 @@ mod test {
     #[test]
     fn histogram_with_very_big_number_is_not_parsed_but_does_not_crash_program() {
         assert_eq!(
-            (vec![], Some("abc|h|123456789123456789123456789123456789123456789123456789123456789123456789".into())),
+            (vec![], Some("abc|h|123456789123456789123456789123456789123456789123456789123456789123456789")),
             parse_protocol(
             "abc|h|123456789123456789123456789123456789123456789123456789123456789123456789"
         )
@@ -275,7 +284,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Gauge(GaugeOperation::Set(12)),
                 )],
                 None,
@@ -286,7 +295,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Gauge(GaugeOperation::Set(-12)),
                 )],
                 None,
@@ -297,7 +306,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Gauge(GaugeOperation::Modify(12)),
                 )],
                 None,
@@ -308,7 +317,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Gauge(GaugeOperation::Modify(-12)),
                 )],
                 None,
@@ -319,7 +328,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Gauge(GaugeOperation::Remove),
                 )],
                 None,
@@ -333,7 +342,7 @@ mod test {
         assert_eq!(
             (
                 vec![],
-                Some("abc|g|123456789123456789123456789123456789123456789123456789123456789123456789".into())
+                Some("abc|g|123456789123456789123456789123456789123456789123456789123456789123456789")
             ),
             parse_protocol(
             "abc|g|123456789123456789123456789123456789123456789123456789123456789123456789"
@@ -342,8 +351,8 @@ mod test {
 
         assert_eq!(
             (
-                vec!{},
-                Some("abc|g|+=123456789123456789123456789123456789123456789123456789123456789123456789".into())
+                vec![],
+                Some("abc|g|+=123456789123456789123456789123456789123456789123456789123456789123456789")
                 ),
             parse_protocol(
             "abc|g|+=123456789123456789123456789123456789123456789123456789123456789123456789"
@@ -356,7 +365,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Timing(123, TimerResolution::MilliSeconds),
                 )],
                 None,
@@ -367,7 +376,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Timing(123, TimerResolution::MilliSeconds),
                 )],
                 None,
@@ -378,7 +387,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Timing(123, TimerResolution::Seconds),
                 )],
                 None,
@@ -389,7 +398,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Timing(123, TimerResolution::MicroSeconds),
                 )],
                 None,
@@ -400,7 +409,7 @@ mod test {
         assert_eq!(
             (
                 vec![Metric::new(
-                    Identifier::without_tags("abc".to_string()),
+                    Identifier::without_tags("abc"),
                     MetricKind::Timing(123, TimerResolution::NanoSeconds),
                 )],
                 None,
@@ -412,21 +421,21 @@ mod test {
     #[test]
     fn timer_with_very_big_number_is_not_parsed_but_does_not_crash_program() {
         assert_eq!(
-            (vec![], Some("abc|t|123456789123456789123456789123456789123456789123456789123456789123456789".into())),
+            (vec![], Some("abc|t|123456789123456789123456789123456789123456789123456789123456789123456789")),
             parse_protocol(
             "abc|t|123456789123456789123456789123456789123456789123456789123456789123456789"
         )
         );
 
         assert_eq!(
-            (vec![], Some("abc|t|123456789123456789123456789123456789123456789123456789123456789123456789|s".into())),
+            (vec![], Some("abc|t|123456789123456789123456789123456789123456789123456789123456789123456789|s")),
             parse_protocol(
                 "abc|t|123456789123456789123456789123456789123456789123456789123456789123456789|s"
             )
         );
 
         assert_eq!(
-            (vec![], Some("abc|t|18446744073709551616|ns".into())),
+            (vec![], Some("abc|t|18446744073709551616|ns")),
             parse_protocol("abc|t|18446744073709551616|ns")
         );
     }

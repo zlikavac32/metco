@@ -8,6 +8,17 @@ All notable changes to this project will be documented in this file.
 
 - Wrong ES backend prefix for `min`/`max` timing metric [#28](https://github.com/zlikavac32/metco/pull/28)
 - Wrong variable used for internal `histogram` count [#29](https://github.com/zlikavac32/metco/pull/29)
+- Metrics with multiple tags are sometimes aggregated as separate metrics
+- Standard deviation is not divided by the number of values
+- Percentiles are wrong when number of values is not 100
+- Panic when reporting overflowing metric with tags, and wrong kind reported for overflowing gauges and histograms
+- Invalid line is merged into the following line instead of being rejected
+- Trailing new line is reported as not parsed bytes
+- Values bigger than `i64::MAX` wrap into negative numbers and counter sum can overflow
+- Interval with only histograms, or only internal telemetry, is not flushed
+- Datagrams larger than 2048 bytes are truncated and last metric may be parsed with wrong value
+- Stale socket read timeout is used right after flush, and zero `refresh-interval` is accepted
+- Slow backends cause flush threads to pile up
 
 ## 0.9.1 - 2025-10-09
 

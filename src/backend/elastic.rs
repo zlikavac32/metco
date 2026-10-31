@@ -1,10 +1,9 @@
 use crate::backend::{Backend, Logger};
-use crate::metrics::TimeFrame;
+use crate::metrics::{Identifier, Number, Statistics, TimeFrame};
 use chrono::{DateTime, Utc};
 use reqwest::blocking::Client;
 use serde_json::{Map, Value};
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{self, Debug, Formatter};
 
 pub struct ElasticSearch {
     client: Client,
@@ -12,10 +11,28 @@ pub struct ElasticSearch {
     index_format: String,
 }
 
+// Manual implementation so that credentials in `dsn` don't end up in logs.
 impl Debug for ElasticSearch {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str("ElasticSearch {}")
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ElasticSearch").finish_non_exhaustive()
     }
+}
+
+impl From<Number> for Value {
+    fn from(number: Number) -> Self {
+        match number {
+            Number::Integer(value) => value.into(),
+            Number::Float(value) => value.into(),
+        }
+    }
+}
+
+fn statistics_fields(prefix: &str, statistics: &Statistics) -> Map<String, Value> {
+    statistics
+        .summary()
+        .into_iter()
+        .map(|(name, value)| (format!("{prefix}.{name}"), value.into()))
+        .collect()
 }
 
 impl ElasticSearch {
@@ -28,164 +45,99 @@ impl ElasticSearch {
     }
 
     fn insert(
-        &mut self,
+        &self,
+        url: &str,
         time: &DateTime<Utc>,
-        mut map: HashMap<String, Value>,
-        tags: &HashMap<String, String>,
+        mut document: Map<String, Value>,
+        identifier: &Identifier,
         logger: &Logger,
     ) {
-        let index = self
-            .index_format
-            .clone()
-            .replace("{date}", &time.format("%Y-%m-%d").to_string());
-
-        map.insert("timestamp".into(), time.to_rfc3339().into());
-        map.insert(
+        document.insert("timestamp".into(), time.to_rfc3339().into());
+        document.insert(
             "tags".into(),
-            tags.iter()
+            identifier
+                .tags()
+                .iter()
                 .map(|(k, v)| (k.clone(), Value::String(v.clone())))
-                .collect::<Map<String, Value>>()
+                .collect::<Map<_, _>>()
                 .into(),
         );
 
-        let err = match self
+        let result = self
             .client
-            .post(format!("{dsn}/{index}/_doc", dsn = self.dsn))
-            .json(&map)
+            .post(url)
+            .json(&document)
             .send()
-        {
-            Ok(response) => match response.error_for_status() {
-                Ok(_) => return,
-                Err(err) => err,
-            },
-            Err(err) => err,
-        };
+            .and_then(|response| response.error_for_status());
 
-        logger.error(&format!("Publish to index failed: {err}"));
+        if let Err(err) = result {
+            logger.error(format_args!("Publish to index failed: {err}"));
+        }
     }
 }
 
 impl Backend for ElasticSearch {
-    fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame, logger: Logger) {
-        time_frame
-            .gauges()
-            .iter()
-            .for_each(|(identifier, (current, stats))| {
-                let name = identifier.name();
+    fn publish(&mut self, time: &DateTime<Utc>, time_frame: &TimeFrame, logger: &Logger) {
+        let index = self
+            .index_format
+            .replace("{date}", &time.format("%Y-%m-%d").to_string());
+        let url = format!("{}/{index}/_doc", self.dsn);
 
-                let map = HashMap::from([
-                    (format!("gauge.{name}.current"), (*current).into()),
-                    (format!("gauge.{name}.count"), stats.count().into()),
-                    (format!("gauge.{name}.sum"), stats.sum().into()),
-                    (format!("gauge.{name}.std"), stats.std().into()),
-                    (format!("gauge.{name}.median"), stats.median().into()),
-                    (
-                        format!("gauge.{name}.p75"),
-                        stats.percentile(75.into()).into(),
-                    ),
-                    (
-                        format!("gauge.{name}.p90"),
-                        stats.percentile(90.into()).into(),
-                    ),
-                    (
-                        format!("gauge.{name}.p99"),
-                        stats.percentile(99.into()).into(),
-                    ),
-                    (format!("gauge.{name}.min"), stats.min().into()),
-                    (format!("gauge.{name}.max"), stats.max().into()),
-                ]);
-
-                self.insert(time, map, identifier.tags(), &logger);
-
-                logger.debug(&format!(
-                    "Processed gauge {name} with tags {:?}",
-                    identifier.tags()
-                ));
-            });
-
-        time_frame
-            .counters()
-            .iter()
-            .for_each(|(identifier, value)| {
-                self.insert(
-                    time,
-                    HashMap::from([(format!("counter.{}", identifier.name()), (*value).into())]),
-                    identifier.tags(),
-                    &logger,
-                );
-
-                logger.debug(&format!(
-                    "Processed counter {} with tags {:?}",
-                    identifier.name(),
-                    identifier.tags()
-                ));
-            });
-
-        time_frame
-            .histograms()
-            .iter()
-            .for_each(|(identifier, stats)| {
-                let name = identifier.name();
-
-                let map = HashMap::from([
-                    (format!("histogram.{name}.count"), stats.count().into()),
-                    (format!("histogram.{name}.sum"), stats.sum().into()),
-                    (format!("histogram.{name}.std"), stats.std().into()),
-                    (format!("histogram.{name}.median"), stats.median().into()),
-                    (
-                        format!("histogram.{name}.p75"),
-                        stats.percentile(75.into()).into(),
-                    ),
-                    (
-                        format!("histogram.{name}.p90"),
-                        stats.percentile(90.into()).into(),
-                    ),
-                    (
-                        format!("histogram.{name}.p99"),
-                        stats.percentile(99.into()).into(),
-                    ),
-                    (format!("histogram.{name}.min"), stats.min().into()),
-                    (format!("histogram.{name}.max"), stats.max().into()),
-                ]);
-
-                self.insert(time, map, identifier.tags(), &logger);
-
-                logger.debug(&format!(
-                    "Processed histogram {name} with tags {:?}",
-                    identifier.tags()
-                ));
-            });
-
-        time_frame.timings().iter().for_each(|(identifier, stats)| {
+        for (identifier, gauge) in time_frame.gauges() {
             let name = identifier.name();
 
-            let map = HashMap::from([
-                (format!("timing.{name}.count"), stats.count().into()),
-                (format!("timing.{name}.sum"), stats.sum().into()),
-                (format!("timing.{name}.std"), stats.std().into()),
-                (format!("timing.{name}.median"), stats.median().into()),
-                (
-                    format!("timing.{name}.p75"),
-                    stats.percentile(75.into()).into(),
-                ),
-                (
-                    format!("timing.{name}.p90"),
-                    stats.percentile(90.into()).into(),
-                ),
-                (
-                    format!("timing.{name}.p99"),
-                    stats.percentile(99.into()).into(),
-                ),
-                (format!("timing.{name}.min"), stats.min().into()),
-                (format!("timing.{name}.max"), stats.max().into()),
-            ]);
+            let mut document = Map::new();
+            document.insert(format!("gauge.{name}.current"), gauge.current.into());
+            document.extend(statistics_fields(
+                &format!("gauge.{name}"),
+                &gauge.statistics,
+            ));
 
-            self.insert(time, map, identifier.tags(), &logger);
+            self.insert(&url, time, document, identifier, logger);
 
-            logger.debug(&format!(
+            logger.debug(format_args!(
+                "Processed gauge {name} with tags {:?}",
+                identifier.tags()
+            ));
+        }
+
+        for (identifier, value) in time_frame.counters() {
+            let name = identifier.name();
+
+            let document = Map::from_iter([(format!("counter.{name}"), (*value).into())]);
+
+            self.insert(&url, time, document, identifier, logger);
+
+            logger.debug(format_args!(
+                "Processed counter {name} with tags {:?}",
+                identifier.tags()
+            ));
+        }
+
+        for (identifier, statistics) in time_frame.histograms() {
+            let name = identifier.name();
+
+            let document = statistics_fields(&format!("histogram.{name}"), statistics);
+
+            self.insert(&url, time, document, identifier, logger);
+
+            logger.debug(format_args!(
+                "Processed histogram {name} with tags {:?}",
+                identifier.tags()
+            ));
+        }
+
+        for (identifier, statistics) in time_frame.timings() {
+            let name = identifier.name();
+
+            let document = statistics_fields(&format!("timing.{name}"), statistics);
+
+            self.insert(&url, time, document, identifier, logger);
+
+            logger.debug(format_args!(
                 "Processed timing {name} with tags {:?}",
                 identifier.tags()
             ));
-        });
+        }
     }
 }

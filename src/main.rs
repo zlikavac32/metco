@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::io::ErrorKind;
 use std::net::UdpSocket;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::process::exit;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use clap::Parser;
 use figment::providers::{Env, Format, Toml};
 use figment::Figment;
@@ -21,93 +21,122 @@ mod backend;
 mod metrics;
 mod protocol;
 
+/// Big enough for any UDP datagram so that payloads are never truncated.
+const MAX_DATAGRAM_SIZE: usize = 65_536;
+
 #[derive(Deserialize, Debug)]
-#[serde(tag = "type")]
-enum Backend {
-    #[serde(rename = "console")]
+#[serde(
+    tag = "type",
+    rename_all = "lowercase",
+    rename_all_fields = "kebab-case"
+)]
+enum BackendConfig {
     Console,
-    #[serde(rename = "postgresql")]
     PostgreSQL {
         host: String,
         port: u16,
         user: String,
         password: String,
-        #[serde(rename = "db-name")]
         db_name: String,
     },
-    #[serde(rename = "elasticsearch")]
     ElasticSearch {
         dsn: String,
-        #[serde(rename = "index-format")]
         index_format: String,
-        #[serde(rename = "accept-invalid-certs")]
         accept_invalid_certs: bool,
     },
+}
+
+impl BackendConfig {
+    fn create(&self) -> Result<Box<dyn backend::Backend>, Box<dyn Error>> {
+        Ok(match self {
+            BackendConfig::Console => Box::new(backend::Console),
+            BackendConfig::PostgreSQL {
+                host,
+                port,
+                user,
+                password,
+                db_name,
+            } => {
+                let client = postgres::Config::new()
+                    .host(host)
+                    .port(*port)
+                    .user(user)
+                    .password(password)
+                    .dbname(db_name)
+                    .connect(postgres::NoTls)?;
+
+                Box::new(backend::PostgreSQL::new(client))
+            }
+            BackendConfig::ElasticSearch {
+                dsn,
+                index_format,
+                accept_invalid_certs,
+            } => {
+                let client = reqwest::blocking::Client::builder()
+                    .danger_accept_invalid_certs(*accept_invalid_certs)
+                    .build()?;
+
+                Box::new(backend::ElasticSearch::new(
+                    client,
+                    dsn.clone(),
+                    index_format.clone(),
+                ))
+            }
+        })
+    }
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(try_from = "BackendsRaw")]
 struct Backends {
-    enabled: Vec<(String, Backend)>,
+    enabled: Vec<(String, BackendConfig)>,
 }
 
 #[derive(Deserialize, Debug)]
 struct BackendsRaw {
     enabled: Vec<String>,
-    available: HashMap<String, Backend>,
+    available: HashMap<String, BackendConfig>,
 }
 
 impl TryFrom<BackendsRaw> for Backends {
     type Error = String;
 
-    fn try_from(mut backends: BackendsRaw) -> Result<Self, Self::Error> {
-        let mut enabled = vec![];
-
-        for backend_name in backends.enabled {
-            if !backends.available.contains_key(&backend_name) {
-                return Err(format!(
+    fn try_from(
+        BackendsRaw {
+            enabled,
+            mut available,
+        }: BackendsRaw,
+    ) -> Result<Self, Self::Error> {
+        let enabled = enabled
+            .into_iter()
+            .map(|backend_name| match available.remove(&backend_name) {
+                Some(backend) => Ok((backend_name, backend)),
+                None => Err(format!(
                     "Backend {backend_name} listed in enabled is not defined as available or is listed multiple times. \
                     Check if you have [backend.available.{backend_name}] in your config or if you defined same \
                     backend multiple times as enabled."
-                ));
-            }
-
-            let backend = backends
-                .available
-                .remove(&backend_name)
-                .expect("We checked that backend exists");
-
-            enabled.push((backend_name, backend));
-        }
+                )),
+            })
+            .collect::<Result<_, _>>()?;
 
         Ok(Backends { enabled })
     }
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
 struct Config {
     host: String,
     port: u16,
-    #[serde(rename = "refresh-interval", with = "humantime_serde")]
+    #[serde(with = "humantime_serde")]
     refresh_interval: Duration,
     #[serde(rename = "backend")]
     backends: Backends,
 }
 
-fn init_logging(cli: &CLI) {
-    stderrlog::new()
-        .module(module_path!())
-        .quiet(cli.quiet)
-        .verbosity(cli.verbosity as usize)
-        .timestamp(Timestamp::Microsecond)
-        .init()
-        .expect("Unable to initialize logging infrastructure");
-}
-
 #[derive(Parser, Debug)]
-#[allow(clippy::upper_case_acronyms)]
 #[command(version, long_about = None)]
-struct CLI {
+struct Cli {
     #[arg(short, long)]
     quiet: bool,
 
@@ -118,276 +147,258 @@ struct CLI {
     config_path: PathBuf,
 }
 
-fn flush_to_backends(config: Arc<Config>, registry: Registry, telemetry: Registry) {
-    type CreatedBackend = (String, Box<dyn backend::Backend>);
-    type CreateBackendError = (String, Box<dyn Error>);
-
-    thread::spawn(move || {
-        let backends = config
-            .backends
-            .enabled
-            .iter()
-            .map(
-                |(name, backend)| -> Result<CreatedBackend, CreateBackendError> {
-                    Ok((
-                        name.clone(),
-                        match backend {
-                            Backend::Console => Box::<backend::Console>::default(),
-                            Backend::PostgreSQL {
-                                host,
-                                port,
-                                user,
-                                password,
-                                db_name,
-                            } => Box::new(backend::PostgreSQL::new({
-                                let mut config = postgres::Config::new();
-
-                                config.host(host);
-                                config.port(*port);
-                                config.user(user);
-                                config.password(password);
-                                config.dbname(db_name);
-
-                                match config.connect(postgres::NoTls) {
-                                    Ok(connection) => connection,
-                                    Err(err) => return Err((name.clone(), err.into())),
-                                }
-                            })),
-                            Backend::ElasticSearch {
-                                dsn,
-                                index_format,
-                                accept_invalid_certs,
-                            } => {
-                                let mut builder = reqwest::blocking::Client::builder();
-
-                                if *accept_invalid_certs {
-                                    builder = builder.danger_accept_invalid_certs(true);
-                                }
-
-                                Box::new(backend::ElasticSearch::new(
-                                    match builder.build() {
-                                        Ok(client) => client,
-                                        Err(err) => return Err((name.clone(), err.into())),
-                                    },
-                                    dsn.clone(),
-                                    index_format.clone(),
-                                ))
-                            }
-                        },
-                    ))
-                },
-            )
-            .filter_map(|backend_result| match backend_result {
-                Ok(backend) => Some(backend),
-                Err((backend, err)) => {
-                    log::error!("[{}] {}", backend, err);
-
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        log::info!("Aggregating collected metrics");
-
-        let now = Utc::now();
-
-        let time_frames = [registry, telemetry]
-            .into_iter()
-            .filter_map(|registry| {
-                if let Some((time_frame, overflowing_metrics)) = registry.finalize() {
-                    for overflowing_metric in overflowing_metrics {
-                        log::warn!("Overflowing metric {}", overflowing_metric);
-                    }
-
-                    Some(time_frame)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        for mut backend in backends {
-            log::trace!("Notifying backend {:?}", backend.0);
-
-            for time_frame in &time_frames {
-                backend
-                    .1
-                    .publish(&now, time_frame, backend::Logger::new(backend.0.clone()));
-            }
-        }
-    });
+fn init_logging(cli: &Cli) {
+    stderrlog::new()
+        .module(module_path!())
+        .quiet(cli.quiet)
+        .verbosity(usize::from(cli.verbosity))
+        .timestamp(Timestamp::Microsecond)
+        .init()
+        .expect("Unable to initialize logging infrastructure");
 }
 
-fn flush(
+/// Metrics collected during one refresh interval.
+struct Flush {
+    time: DateTime<Utc>,
     registry: Registry,
-    mut telemetry: Registry,
-    config: Arc<Config>,
-    host: String,
-) -> (Registry, Registry) {
-    if registry.is_empty() {
-        log::info!("Registry is empty, nothing to aggregate");
+    telemetry: Registry,
+}
 
-        return (registry, telemetry);
+/// Spawns a single thread which publishes flushes to backends one by one, so that slow backends
+/// can not cause threads to pile up.
+fn spawn_flush_worker(config: Arc<Config>) -> mpsc::Sender<Flush> {
+    let (sender, receiver) = mpsc::channel::<Flush>();
+
+    thread::spawn(move || {
+        for flush in receiver {
+            // Panic is already reported by the panic hook. Catching it keeps the worker alive
+            // for following flushes.
+            let _ = panic::catch_unwind(AssertUnwindSafe(|| flush_to_backends(&config, flush)));
+        }
+    });
+
+    sender
+}
+
+fn flush_to_backends(config: &Config, flush: Flush) {
+    let Flush {
+        time,
+        registry,
+        telemetry,
+    } = flush;
+
+    let backends = config
+        .backends
+        .enabled
+        .iter()
+        .filter_map(|(name, backend)| match backend.create() {
+            Ok(backend) => Some((name, backend)),
+            Err(err) => {
+                log::error!("[{name}] {err}");
+
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    log::info!("Aggregating collected metrics");
+
+    let time_frames = [registry, telemetry]
+        .into_iter()
+        .map(|registry| {
+            let (time_frame, overflowing_metrics) = registry.finalize();
+
+            for overflowing_metric in overflowing_metrics {
+                log::warn!("Overflowing metric {overflowing_metric}");
+            }
+
+            time_frame
+        })
+        .collect::<Vec<_>>();
+
+    for (name, mut backend) in backends {
+        log::trace!("Notifying backend {name:?}");
+
+        let logger = backend::Logger::new(name);
+
+        for time_frame in &time_frames {
+            backend.publish(&time, time_frame, &logger);
+        }
+    }
+}
+
+struct Collector {
+    flush_worker: mpsc::Sender<Flush>,
+    host: String,
+    registry: Registry,
+    telemetry: Registry,
+}
+
+impl Collector {
+    fn new(config: Arc<Config>, host: String) -> Self {
+        Self {
+            flush_worker: spawn_flush_worker(config),
+            host,
+            registry: Registry::default(),
+            telemetry: Registry::default(),
+        }
     }
 
-    let new_registry = registry.new_with_gauges();
-    let new_telemetry = telemetry.new_with_gauges();
+    fn add_telemetry(&mut self, name: &str, extra_tags: &[(&str, &str)], kind: MetricKind) {
+        let tags = [("host", self.host.as_str())]
+            .iter()
+            .chain(extra_tags)
+            .map(|&(k, v)| (k.to_owned(), v.to_owned()))
+            .collect();
 
-    telemetry.add(Metric::new(
-        Identifier::with_tags(
-            "metco.memory_usage".into(),
-            HashMap::from([("host".into(), host)]),
-        ),
-        MetricKind::Counter(
-            memory_stats::memory_stats()
-                .expect("Memory usage should be computed")
-                .physical_mem as u64,
-        ),
-    ));
+        // Telemetry values are small enough that overflow can be ignored.
+        let _ = self
+            .telemetry
+            .add(Metric::new(Identifier::with_tags(name, tags), kind));
+    }
 
-    flush_to_backends(config, registry, telemetry);
+    fn flush(&mut self) {
+        if self.registry.is_empty() && self.telemetry.is_empty() {
+            log::info!("Registry is empty, nothing to aggregate");
 
-    (new_registry, new_telemetry)
+            return;
+        }
+
+        let memory_usage = memory_stats::memory_stats()
+            .expect("Memory usage should be computed")
+            .physical_mem as u64;
+
+        let new_registry = self.registry.new_with_gauges();
+        let new_telemetry = self.telemetry.new_with_gauges();
+        let registry = std::mem::replace(&mut self.registry, new_registry);
+
+        self.add_telemetry("metco.memory_usage", &[], MetricKind::Counter(memory_usage));
+
+        let telemetry = std::mem::replace(&mut self.telemetry, new_telemetry);
+
+        let flush = Flush {
+            time: Utc::now(),
+            registry,
+            telemetry,
+        };
+
+        if self.flush_worker.send(flush).is_err() {
+            log::error!("Flush worker is not running, collected metrics are lost");
+        }
+    }
+
+    fn handle_payload(&mut self, payload: &[u8]) {
+        let start = Instant::now();
+
+        self.add_telemetry(
+            "metco.bytes_read",
+            &[],
+            MetricKind::Histogram(payload.len() as u64),
+        );
+
+        let payload = match std::str::from_utf8(payload) {
+            Ok(payload) => payload,
+            Err(err) => {
+                log::warn!("Unable to handle payload as utf8: {err}");
+                log::trace!("Payload: {payload:?}");
+
+                return;
+            }
+        };
+
+        let (metrics, rest) = protocol::parse_protocol(payload);
+
+        let mut parsed_counts = HashMap::<&'static str, u64>::new();
+
+        for metric in metrics {
+            log::trace!("Parsed metric: {metric:?}");
+
+            *parsed_counts.entry(metric.kind().name()).or_default() += 1;
+
+            if self.registry.add(metric).is_err() {
+                log::warn!("To big metric received, ignoring");
+            }
+        }
+
+        if let Some(rest) = rest {
+            log::info!("Failed to process bytes: {rest:?}");
+
+            self.add_telemetry(
+                "metco.bytes_not_parsed",
+                &[],
+                MetricKind::Histogram(rest.len() as u64),
+            );
+        }
+
+        for (kind, count) in parsed_counts {
+            self.add_telemetry(
+                "metco.metrics_parsed",
+                &[("kind", kind)],
+                MetricKind::Histogram(count),
+            );
+        }
+
+        self.add_telemetry(
+            "metco.iteration_duration",
+            &[],
+            MetricKind::Timing(
+                start.elapsed().as_nanos() as u64,
+                TimerResolution::NanoSeconds,
+            ),
+        );
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let cli = CLI::parse();
+    let cli = Cli::parse();
     init_logging(&cli);
 
-    let host = hostname::get()
-        .expect("Unable to load hostname")
+    let host = hostname::get()?
         .into_string()
-        .expect("Hostname is not valid UTF-8 string");
+        .map_err(|host| format!("Hostname {host:?} is not valid UTF-8 string"))?;
 
     let config: Arc<Config> = Arc::new(
         Figment::new()
-            .merge(Toml::file(cli.config_path))
+            .merge(Toml::file(&cli.config_path))
             .merge(Env::prefixed("METCO_"))
             .extract()?,
     );
 
-    let socket = UdpSocket::bind(format!("{}:{}", config.host, config.port)).unwrap();
+    if config.refresh_interval.is_zero() {
+        return Err("refresh-interval must be greater than zero".into());
+    }
 
-    let mut now = Instant::now();
+    let socket = UdpSocket::bind((config.host.as_str(), config.port))?;
 
-    let mut registry = Registry::default();
-    let mut telemetry = Registry::default();
-
-    let mut buff = [0; 2048];
+    let refresh_interval = config.refresh_interval;
+    let mut collector = Collector::new(config, host);
+    let mut last_flush = Instant::now();
+    let mut buff = vec![0; MAX_DATAGRAM_SIZE];
 
     loop {
-        let elapsed = now.elapsed();
+        let elapsed = last_flush.elapsed();
 
-        if elapsed >= config.refresh_interval {
-            (registry, telemetry) = flush(registry, telemetry, config.clone(), host.clone());
-            now = Instant::now();
-        } else {
-            socket
-                .set_read_timeout(Some(config.refresh_interval - elapsed))
-                .expect("Why are we unable to set read timeout?");
+        if elapsed >= refresh_interval {
+            collector.flush();
+            last_flush = Instant::now();
+
+            continue;
         }
+
+        socket.set_read_timeout(Some(refresh_interval - elapsed))?;
 
         log::info!("Waiting for data from socket");
 
         match socket.recv(&mut buff) {
-            Ok(size_read) => {
-                let now = Instant::now();
-
-                telemetry.add(Metric::new(
-                    Identifier::with_tags(
-                        "metco.bytes_read".into(),
-                        HashMap::from([("host".into(), host.clone())]),
-                    ),
-                    MetricKind::Histogram(size_read as u64),
-                ));
-
-                let payload = match std::str::from_utf8(&buff[..size_read]) {
-                    Ok(payload) => payload,
-                    Err(err) => {
-                        log::warn!("Unable to handle payload as utf8: {}", err);
-                        log::trace!("Payload: {:?}", &buff);
-
-                        continue;
-                    }
-                };
-
-                let (metrics, rest) = protocol::parse_protocol(payload);
-
-                let mut counters_count = 0;
-                let mut histograms_count = 0;
-                let mut timers_count = 0;
-                let mut gauges_count = 0;
-
-                for metric in metrics {
-                    log::trace!("Parsed metric: {:?}", &metric);
-
-                    if metric.is_counter() {
-                        counters_count += 1;
-                    } else if metric.is_histogram() {
-                        histograms_count += 1;
-                    } else if metric.is_timer() {
-                        timers_count += 1;
-                    } else if metric.is_gauge() {
-                        gauges_count += 1;
-                    }
-
-                    if !registry.add(metric) {
-                        log::warn!("To big metric received, ignoring");
-                    }
-                }
-
-                if let Some(rest) = rest {
-                    log::info!("Failed to process bytes: {rest:?}");
-
-                    telemetry.add(Metric::new(
-                        Identifier::with_tags(
-                            "metco.bytes_not_parsed".into(),
-                            HashMap::from([("host".into(), host.clone())]),
-                        ),
-                        MetricKind::Histogram(rest.len() as u64),
-                    ));
-                }
-
-                macro_rules! metric_kind_telemetry {
-                    ($var:ident, $kind:literal) => {
-                        if $var > 0 {
-                            telemetry.add(Metric::new(
-                                Identifier::with_tags(
-                                    "metco.metrics_parsed".into(),
-                                    HashMap::from([
-                                        ("host".into(), host.clone()),
-                                        ("kind".into(), $kind.into()),
-                                    ]),
-                                ),
-                                MetricKind::Histogram($var),
-                            ));
-                        }
-                    };
-                }
-
-                metric_kind_telemetry!(counters_count, "counter");
-                metric_kind_telemetry!(histograms_count, "histogram");
-                metric_kind_telemetry!(timers_count, "timer");
-                metric_kind_telemetry!(gauges_count, "gauge");
-
-                let elapsed = now.elapsed();
-
-                telemetry.add(Metric::new(
-                    Identifier::with_tags(
-                        "metco.iteration_duration".into(),
-                        HashMap::from([("host".into(), host.clone())]),
-                    ),
-                    MetricKind::Timing(elapsed.as_nanos() as u64, TimerResolution::NanoSeconds),
-                ));
+            Ok(size_read) => collector.handle_payload(&buff[..size_read]),
+            // Timeout is reported as `WouldBlock` on Unix and as `TimedOut` on Windows.
+            Err(err) if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                log::trace!("Read timeout reached")
             }
             Err(err) => {
-                if err.kind() != ErrorKind::WouldBlock {
-                    log::error!("Error occurred: {}", err);
+                log::error!("Error occurred: {err}");
 
-                    exit(1);
-                } else {
-                    log::trace!("Read timeout reached");
-                }
+                return Err(err.into());
             }
         }
     }

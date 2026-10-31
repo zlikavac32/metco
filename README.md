@@ -23,9 +23,9 @@ Also, I do plan to keep this as simple as possible because I like Linux philosop
 
 Protocol is simple text based protocol. Metrics are in form of `name|type|value` and optionally some additional fields separated by `|` depending on metric type.
 
-Metric name is any valid UTF-8 sequence of at least one byte. It's backends job to sanitize name if needed. Special characters in `name` part are `|`, `;` and `\` and if used, must be escaped using `\`.
+Metric name is any valid UTF-8 sequence of at least one byte that does not contain a new line. It's backends job to sanitize name if needed. Special characters in `name` part are `|`, `;` and `\` and if used, must be escaped using `\`.
 
-Each metric can have associated tags that are used to fine tune aggregations. Tags are a part of `name` in format `name=value` separated by `;` without a trailing `;`. If `=` or `\` is used as a part of tag name, it must be escaped using `\`. If `;`, `\` or `|` is used as a part of tag value, it must be escaped using `\`.
+Each metric can have associated tags that are used to fine tune aggregations. Tags are a part of `name` in format `name=value` separated by `;` without a trailing `;`. If `=`, `;`, `\` or `|` is used as a part of tag name, it must be escaped using `\`. If `;`, `\` or `|` is used as a part of tag value, it must be escaped using `\`.
 
 Assigning two tags to a metric would look like `name;tag1=value1;tag2=value2`.
 
@@ -33,11 +33,13 @@ Type can be any of `c`, `h`, `t` or `g`.
 
 Value format and optional additional fields are defined by the metric type.
 
-Multiple metrics can be sent separated by `\n`. Data parsed before a parsing error occurs is still considered valid, but remaining data is not parsed.
+Tag names and values can not contain a new line.
+
+Multiple metrics can be sent separated by `\n`. A single trailing `\n` is allowed. Data parsed before a parsing error occurs is still considered valid, but remaining data is not parsed.
 
 ### Counters
 
-This is just a simple counter. Value must be a natural number.
+This is just a simple counter. Value must be a natural number not bigger than `9223372036854775807` (maximum signed 64-bit integer). Metric is rejected if the sum of all values within one interval would be bigger than that.
 
 ```
 abc|c|1234
@@ -45,7 +47,7 @@ abc|c|1234
 
 ### Histograms
 
-Value must be a natural number. It's similar to `counter`, except statistics like `min`, `max`, `sum`, etc. are calculated for it.
+Value must be a natural number not bigger than `9223372036854775807` (maximum signed 64-bit integer). It's similar to `counter`, except statistics like `min`, `max`, `sum`, etc. are calculated for it.
 
 ```
 abc|h|1234
@@ -55,7 +57,7 @@ abc|h|1234
 
 By default resolution is milliseconds.
 
-Value is always a positive natural number
+Value is always a positive natural number. Value converted to nanoseconds must not be bigger than `9223372036854775807` (maximum signed 64-bit integer), which is roughly 292 years.
 
 ```
 abc|t|1234
@@ -69,7 +71,7 @@ abc|t|1234|ms
 
 ### Gauges
 
-Value is a natural number.
+Value is an integer within the range of signed 64-bit integer.
 
 ```
 abc|g|123
@@ -79,7 +81,7 @@ abc|g|123
 abc|g|-123
 ```
 
-Instead of setting value, it can be updated by incrementing/decrementing by a specified amount.
+Instead of setting value, it can be updated by incrementing/decrementing by a specified amount. Update is rejected if the resulting value would not fit into signed 64-bit integer.
 
 ```
 abc|g|+=123
